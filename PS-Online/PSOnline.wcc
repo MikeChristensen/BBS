@@ -1,5 +1,7 @@
 //New Features
 
+// 5.6.2016 -- Replaced all instances of TNnodeInfo with TwcNodeInfo for Wildcat! 6.4 (robert.wolfe@robertwolfe.org / 5.6.2016 / 6.4.454)
+
 //To Do
 
 #include "pager.wch"
@@ -7,6 +9,11 @@
 #include "cmdline.wch"
 #include "pagemsg.wch"
 #include "dispfile.wch"
+
+// robert.wolfe@robertwolfe.org - 5.7.2016
+if (GetNode() = 0) then
+    LoginSystem()
+end if
 
 type ConfigFile
    MailNodes as string * 30
@@ -31,7 +38,7 @@ dim PageCount      as integer
 dim choice         as string
 dim ExitCode       as integer
 dim nodeid         as integer
-dim ni             as TNodeInfo
+dim ni             as TwcNodeInfo            ' ** robert.wolfe@robertwolfe.org / 5.6.2016 / 6.4.454
 dim OldNodeStatus(1 to 255) as integer
 dim OldActStatus(1 to 255) as string * 25
 dim UsersOnline    as integer
@@ -171,7 +178,7 @@ end function
 
 sub EditNode(Node as byte)
     do
-      dim Editni as TNodeInfo
+      dim Editni as TwcNodeInfo    ' ** robert.wolfe@robertwolfe.org / 5.6.2016 / 6.4.454
       GetNodeInfo(node, Editni)
       cls
       print [SysopNodeHeader "@N@Node # @F@"]; node
@@ -813,7 +820,7 @@ end sub
          
 sub NeedToUpdate
   dim NodeRunner as byte
-  dim TempNodeInfo as TNodeInfo
+  dim TempNodeInfo as TwcNodeInfo
   dim UpdateRow as byte
   
   for NodeRunner = BottomNode to TopNode
@@ -935,7 +942,7 @@ sub GetPage(cmsg as TChannelMessage)
             end if
          else
             dim PageFrom as string = pmsg.From
-            dim Otherni as TNodeInfo
+            dim Otherni as TwcNodeInfo
             if not GetNodeInfoByName(PageFrom, Otherni) then
               dim TempNameStore as TuserInfo
               if LookupName(pmsg.From, TempNameStore) then
@@ -1040,7 +1047,7 @@ ReadConfig
   
   SetNodeActivity("Who's Online?")
   RefreshScreen
-  dim TempLooperInfo as TNodeinfo
+  dim TempLooperInfo as TwcNodeinfo
   dim SaveLooper as byte
   dim PageName as string
 
@@ -1213,7 +1220,7 @@ ReadConfig
                SubText(1) = Str(HilightedNode)
                locate 10,15 : print "@1F@";chr(218);string(2,196);" @1D@Node Info@1F@ ";string(34,196);chr(191)
                locate 11,15 : Print "@1F@";chr(179);string(47,32);chr(179);"@00@ "
-               dim Viewni as TNodeInfo
+               dim Viewni as TwcNodeInfo
                GetNodeInfo(HilightedNode, Viewni)
                select case Viewni.NodeStatus
                  case nsDown
@@ -1452,7 +1459,7 @@ ReadConfig
            
         case asc("U"), asc("u")
            if GetObjectFlags(OBJECTID_MASTER_SYSOP) then
-              dim TempN as TNodeInfo
+              dim TempN as TwcNodeInfo
               GetNodeInfo(HilightedNode, TempN)
               if TempN.user.id > 0 then
                  color 7,0
@@ -1575,7 +1582,7 @@ ReadConfig
                  dim Findnc as TNodeConfig
                  dim FindUser as TUser
                  GetNodeConfig(FindUserOnline, Findnc)
-                dim Findni as TNodeInfo
+                dim Findni as TwcNodeInfo
                 GetNodeInfo(FindUserOnline, Findni)
                 if ucase(Findni.User.Name) = ucase(trim(UserHolder)) then 
                    UserFoundOnNode = FindUserOnline
