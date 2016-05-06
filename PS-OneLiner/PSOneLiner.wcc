@@ -1,0 +1,708 @@
+//Before 2.0 Release
+//   3) Convert @ codes to <FONT> codes
+
+// To Do
+//   1) Sysop edit of author, date, time, anon flag
+//   2) Sysop config menu
+//   3) Users can delete/edit own oneliners
+//   6) Bad users list
+//   7) Bad sec level list
+//   8) Reg code system
+//   9) All docs/distrib
+
+#include "util.wch"
+#include "cmdline.wch"
+#include "DispFile.wch"
+
+type OneLiner
+   Entry as string * 120
+   Author as string * 25
+   DateEntered as string * 10
+   TimeEntered as string * 10
+   UserID as integer
+   Anon as boolean
+end type
+
+dim OL as OneLiner
+
+dim Dropper as integer, NumOfLines as integer, Counter as integer
+dim OneLinerGot as string * 80, PutAtSigns as integer
+dim b As String, x As Integer, y As Integer, z As integer, q As Boolean, SignName as Boolean
+dim StringSearch as Integer, TempString as String, CopyIt as Boolean, DrawRedBall as Boolean
+dim Header as Integer, Pick as real, NumLines as Integer
+dim BypassFade as boolean = FALSE
+
+dim HTMLOutput as string
+dim OutputHtmlYesNo as string
+dim OutputHtml as boolean
+
+dim LineCount as word
+dim OneLinerEntry(14) as OneLiner
+
+function UpperLower(byval s as string) as string
+  dim t as string
+  dim i as integer = 1
+  do
+    dim w as string = ExtractWord(s, i)
+    if w = "" then exit do
+    if i > 1 then
+      t = t + " "
+    end if
+    t = t + ucase(w(1))+lcase(mid(w, 2))
+    inc(i)
+  loop
+  UpperLower = t
+end function
+
+function Bar (LengthOfBar as integer, CharOfBar as integer, BarColor as byte) as STRING
+   IF CharOfBar = 0 THEN CharOfBar = 196
+   COLOR BarColor
+   Bar = STRING(LengthOfBar, CHR(CharOfBar))
+   IF CharOfBar = 196 THEN MID(Bar, 5, 8) = STRING(8, CHR(205))
+end function
+
+Sub ReadCfg
+   Open "wc:\data\Oneliner.cfg" for input as #1
+      input #1, HTMLOutput
+      input #1, OutputHtmlYesNo
+      If UCASE(OutputHtmlYesNo) = "Y" then OutputHtml = TRUE else OutputHtml = FALSE  
+   Close #1
+end Sub
+
+SUB ShowHeader
+    Header = (Timer Mod 99) + 1
+    For x = 1 To Header
+        Pick = Rnd
+    Next x
+    x = 1000 * Pick
+    Header=(x Mod 10) + 1
+    IF Header = 1 THEN 
+        DisplayFile("WC:\DISP\OneTop1.BBS")
+        End If
+    IF Header = 2 THEN 
+        DisplayFile("WC:\DISP\OneTop2.BBS")
+        End If
+    IF Header = 3 THEN 
+        DisplayFile("WC:\DISP\OneTop3.BBS")
+        End If
+    IF Header = 4 THEN 
+        DisplayFile("WC:\DISP\OneTop4.BBS")
+        End If
+    IF Header = 5 THEN 
+        DisplayFile("WC:\DISP\OneTop1.BBS")
+        End If
+    IF Header = 6 THEN 
+        DisplayFile("WC:\DISP\OneTop2.BBS")
+        End If
+    IF Header = 7 THEN 
+        DisplayFile("WC:\DISP\OneTop3.BBS")
+        End If
+    IF Header = 8 THEN 
+        DisplayFile("WC:\DISP\OneTop4.BBS")
+        End If
+    IF Header = 9 THEN 
+        DisplayFile("WC:\DISP\OneTop1.BBS")
+        End If
+    IF Header = 10 THEN 
+        DisplayFile("WC:\DISP\OneTop2.BBS")
+        End If
+    Locate 7,1
+    Print "@0B@"; STRING$(79, 196)
+
+END SUB
+
+SUB DropLine
+    FOR Dropper = 8 TO 19
+	   locate Dropper, 1
+       Print "@0B@"; STRING$(79, 196)
+	   Delay .1
+       locate Dropper, 1
+	   print STRING$(79, " ")
+       select case inkey
+          case "X"
+             end
+          case "x"
+             end
+          case chr(32)
+             BypassFade = TRUE
+             exit for
+       end select
+             
+    NEXT Dropper
+
+    locate 20, 1
+    Print "@0B@"
+    print STRING$(79, 196)
+END SUB
+
+SUB RaiseLine
+    FOR Dropper = 21 TO 1 STEP -1
+	   locate Dropper, 1
+	   Print "@0B@"; STRING$(79, 196)
+	   Delay .1
+	   locate Dropper, 1
+	   print STRING(80, " ");
+       If inkey = chr$(32) then exit for    
+    NEXT Dropper
+END SUB
+
+SUB ShowOneLiners
+    LineCount = 0
+
+    OPEN "wc:\DATA\ONELINER.DAT" FOR RANDOM AS #1 len = len(OneLiner)
+    NumOfLines = lof(1)
+
+    IF NumOfLines > 13 THEN
+	   FOR Counter = NumOfLines - 12 TO NumOfLines
+            inc(LineCount)
+		    get #1, Counter, ol
+	   	    Locate LineCount + 7,2
+            Print "@08@";chr(34);"@0B@";ol.Entry;"@08@";chr(34)
+            OneLinerEntry(LineCount) = ol
+       NEXT Counter
+
+	   CLOSE #1
+    ELSE
+
+	   FOR Counter = 1 TO NumOfLines
+            inc(LineCount)
+		    get #1, Counter, ol
+	   	    Locate Counter + 7,2
+            Print "@08@";chr(34);"@0B@";ol.Entry;"@08@";chr(34)
+            OneLinerEntry(Counter) = ol
+       NEXT Counter                 
+
+       CLOSE #1
+
+    END IF
+END SUB
+
+function AtCodesToUpper(s as string) as string
+  dim upmode as boolean = False
+  dim n as integer
+  for n = 1 to len(s)
+    if upmode then
+      if s(n) >= "a" and s(n) <= "f" then
+        mid(s, n, 1) = chr(asc(s(n)) - 0x20)
+      end if
+    end if
+    if s(n) = "@" and s(n+3) = "@" then
+      if upmode then
+        upmode = False
+      else
+        upmode = True
+      end if
+    end if
+    if s(n) = "@" and s(n-3) = "@" then
+      if upmode then
+        upmode = False
+      else
+        upmode = True
+      end if
+    end if
+  next
+  AtCodesToUpper = s
+end function
+
+Sub WriteToDataFile
+    dim now as DateTime
+    GetCurrentDateTime(now)
+    
+    OPEN "wc:\DATA\ONELINER.DAT" FOR RANDOM AS #1 len = len(OneLiner)
+    
+    OL.Entry = OneLinerGot
+    OL.Author = user.info.name
+    OL.DateEntered = DateString(now)
+    OL.TimeEntered = TimeString(now)
+    OL.UserID = user.info.id
+    
+    put #1, lof(1) + 1, OL
+    Close #1
+End Sub
+
+Function NoBadWords as boolean
+   dim Checker as string
+
+   if Exists("wc:\data\badwords.dat") then
+      open "wc:\data\badwords.dat" for input as #1
+      NoBadWords = TRUE   
+      do while not eof(1)
+         input #1, Checker
+         if instr(ucase(OneLinerGot), trim(ucase(Checker))) > 0 then NoBadWords = FALSE
+      loop
+      close #1
+   else
+      NoBadWords = TRUE
+   end if
+end function
+
+Function StripAts(c As String) as string
+    CopyIt=TRUE
+    TempString=""
+    
+    For StringSearch = 1 to LEN(c)
+
+        If MID(c, StringSearch, 1) <> "@" And CopyIt Then 
+            TempString = TempString + MID(c, StringSearch, 1)
+        Else
+            If Not CopyIt And MID(c, StringSearch, 1) = "@" Then
+                CopyIt=TRUE
+            Else
+                CopyIt=FALSE
+            End If
+        End If
+   
+    Next StringSearch
+
+    StripAts = TempString
+End Function
+
+Sub WriteToHTMLFile
+    Open HTMLOutput for output as #1
+    dim GetCounter as integer = 0
+    dim HTMLRec as OneLiner
+    
+      print #1, "<html>"
+      print #1, "<head>"
+      print #1, "<TITLE>PS-OneLiner 3.0</TITLE>"
+      print #1, "<META name=""description"" content=""PS-OneLiner 3.0 OneLiner Section"">"
+      print #1, "</head>"
+      print #1, ""
+      print #1, "<BODY STYLE=""margin-top: 0px; margin-left: 0px; margin-right: 0px; margin-bottom:0px"" bgcolor=white text=black link=black vlink=black margin=0>"
+      print #1, "<BASEFONT FACE=""VERDANA,ARIAL,HELVETICA"" COLOR=""000000"">"
+      print #1, ""
+      print #1, "<table border=0 cellspacing=0 cellpadding=0 width=100%>"
+      print #1, "   <tr>"
+      print #1, "      <td align=left>"
+      print #1, "         <table border=0 cellpadding=0 cellspacing=0 width=100%>"
+      print #1, "            <tr>"
+      print #1, "               <td align=left valign=top width=146 height=58 bgcolor=""#000000"">"
+      print #1, "                  <img src=""http://24.0.0.28/impulse9/graphics/BlackLogo.jpg"" width=146 height=58 alt=""Pisces Software"">"
+      print #1, "               </td>"
+      print #1, "               <td align=left valign=top width=""100%"" height=58 bgcolor=""#000000"">&nbsp;</td>"
+      print #1, "               <td align=right valign=top height=58 bgcolor=""#000000"" nowrap>"
+      print #1, "                  <font size=6 color=white face=verdana>PS-OneLiner 3.0</font>&nbsp;"
+      print #1, "               </td>"
+      print #1, "               <td align=left valign=top width=2 height=58 bgcolor=""#000000"">&nbsp;</td>"
+      print #1, "            </tr>"
+      print #1, "            <tr>"
+      print #1, "               <td colspan=5 bgcolor=""#FFFFFF"" width=100% height=1>"
+      print #1, "               </td>"
+      print #1, "            </tr>"
+      print #1, "         </table>"
+      print #1, "      </td>"
+      print #1, "   </tr>"
+      print #1, "   <tr>"
+      print #1, "      <td bgcolor=""#FFFFFF"" height=21 width=""100%"">"
+      print #1, "         <table border=0 cellpadding=0 cellspacing=0 width=""100%"" height=21>"
+      print #1, "            <tr>"
+      print #1, "               <td width=""100%"">"
+      print #1, "                  <TABLE WIDTH=""100%"" CELLPADDING=""0"" CELLSPACING=""0"" BORDER=""0"" bgcolor=white>"
+      print #1, "                     <TR>"
+      print #1, "                        <TD WIDTH=112 ALIGN=""LEFT"" VALIGN=""TOP"" ROWSPAN=""2"">&nbsp</TD>"
+      print #1, "                        <TD COLSPAN=5>&nbsp;</TD>"
+      print #1, "                     </TR>"
+      print #1, "                     <TR>"
+      print #1, "                        <TD VALIGN=TOP>"
+      print #1, "                           <p align=center>"
+      print #1, "                           <TABLE BORDER=0 CELLPADDING=0 CELLSPACING=0 WIDTH=98%>"
+      print #1, "                              <TR>"
+      print #1, "                                 <TD WIDTH=19>&nbsp;</TD>"
+      print #1, "                                 <TD VALIGN=TOP WIDTH=100%>"
+      print #1, "                                    <table width=85%>"
+      print #1, "                                       <tr>"
+      print #1, "                                          <td>"
+      print #1, "                                             <center><FORM METHOD=""GET"" ACTION=""/public/code/html-OneLinerAdd"">"
+      print #1, "                                             <table width=100%>"
+      print #1, "                                                <tr>"
+      print #1, "                                                   <td colspan=2 align=center>"
+      print #1, "                                                      <font face=arial size=2 color=black><b>Please Add Your Own OneLiner:</b></font>"
+      print #1, "                                                   </td>"
+      print #1, "                                                </tr>"
+      print #1, "                                                <tr>"
+      print #1, "                                                   <td align=right>"
+      print #1, "                                                      <input NAME=""OneLinerToAdd"" size=50 maxlength=77></input>"
+      print #1, "                                                   </td>"
+      print #1, "                                                   <td align=left>"
+      print #1, "                                                      <INPUT TYPE=""submit"" VALUE=""Post"">"
+      print #1, "                                                      </FORM>"
+      print #1, "                                                   </td>"
+      print #1, "                                                </tr>"
+      print #1, "                                             </table>"
+      print #1, "                                             </center>"
+      print #1, "                                          </td>"
+      print #1, "                                       </tr>"
+      print #1, "                                    </table>"
+      print #1, ""
+      print #1, "                                    <table width=85%>"
+      print #1, "                                       <tr>"
+      print #1, "                                          <td>"
+      print #1, "                                             <center><hr color=#000099 height=1 width=90%></center><font size=1 face=arial color=black>"
+
+    open "wc:\DATA\ONELINER.DAT" for random as #2 len = len(OneLiner)
+    
+        do while not eof(2)
+        Inc(GetCounter)
+        get #2, GetCounter, HTMLRec
+        dim Stripper as string = HTMLRec.Entry
+        HTMLRec.Entry = StripAts(Stripper)
+        If DrawRedBall Then
+            Print #1, "                                             <CENTER> <IMG SRC=""http://24.0.0.28/impulse9/graphics/whiteball.gif""> </CENTER>"
+        Else
+           DrawRedBall=TRUE
+        End If
+        Print #1, "                                             <CENTER><B>";HTMLRec.Entry;"</B></CENTER>"
+        if HTMLRec.Anon then
+           Print #1, "                                             <CENTER>- Anonymous  (";HTMLRec.TimeEntered;" on ";HTMLRec.DateEntered;")</CENTER>"
+        else
+           Print #1, "                                             <CENTER>- ";UpperLower(HTMLRec.Author);"  (";HTMLRec.TimeEntered;" on ";HTMLRec.DateEntered;")</CENTER>"        
+        end if
+    Loop
+    
+    print #1, "                                          <FORM METHOD=""GET"" ACTION=""/public/code/html-OneLinerAdd"">"
+    print #1, "                                          <table width=100%>"
+    print #1, "                                             <tr>"
+    print #1, "                                                <td colspan=2 align=center>"
+    print #1, "                                                   <font face=arial size=2 color=black><b>Please Add Your Own OneLiner:</b></font>"
+    print #1, "                                                </td>"
+    print #1, "                                             </tr>"
+    print #1, "                                             <tr>"
+    print #1, "                                                <td align=right>"
+    print #1, "                                                   <input NAME=""OneLinerToAdd"" size=50 maxlength=77>"
+    print #1, "                                                </td>"
+    print #1, "                                                <td align=left>"
+    print #1, "                                                   <INPUT TYPE=""submit"" VALUE=""Post"">"
+    print #1, "                                                </td>"
+    print #1, "                                             </tr>"
+    print #1, "                                          </table>"
+    print #1, "                                          </FORM>"
+    print #1, ""
+    print #1, "                                          </td></tr></table>"
+    print #1, ""
+    print #1, "                                          <BR>"
+    print #1, "                                          <CENTER><font size=1 face=arial color=black><b>For information about <a href=""http://www.piscessoft.com/PSOneLiner.htm"" target=""_new"">PS-OneLiner 3.0</a> by Mike Christensen, ";
+    print #1, "<A HREF=""mailto:support@piscessoft.com"">E-Mail Pisces Software</a>."
+    print #1, "                                          <CENTER><font size=1 face=arial color=black>PS-OneLiner 3.0 Copyright &#169; 1998 Mike Christensen All Rights Reserved</font></CENTER><br><br>"
+    print #1, "                                          </td></tr></table></td></tr></table></td></tr></table></td></tr></table></td></tr></table>"
+    print #1, "</body>"
+    print #1, "</html>"
+    Close #1
+    Close #2
+
+End Sub
+
+sub LightOn(WhichLight as byte)
+   SubText(1) = UpperLower(OneLinerEntry(WhichLight).Author)
+   SubText(2) = OneLinerEntry(WhichLight).DateEntered
+   SubText(3) = OneLinerEntry(WhichLight).TimeEntered
+   
+   if GetObjectFlags(OBJECTID_MASTER_SYSOP) <> 0 and OneLinerEntry(WhichLight).Anon then 
+      SubText(1) = SubText(1) + " (A)"
+   end if
+   
+   locate 7 + WhichLight, 1
+   If OneLinerEntry(WhichLight).Anon and GetObjectFlags(OBJECTID_MASTER_SYSOP) = 0 then
+      Print " @1D@  Author: @1F@Anonymous            @1D@Date: @1F@@SUB2:15@ @1D@Time: @1F@@SUB3:15@    @0F@";
+   else
+      Print " @1D@  Author: @1F@@SUB1:20@ @1D@Date: @1F@@SUB2:15@ @1D@Time: @1F@@SUB3:15@    @0F@";
+   end if
+end sub
+
+sub LightOff(WhichLight as byte)
+   locate 7 + WhichLight, 1
+   print "@00@";string(80, 32);
+   locate 7 + WhichLight, 1
+   Print " @08@";chr(34);"@0B@";OneLinerEntry(WhichLight).Entry;"@08@";chr(34)
+end sub
+
+sub RefreshScreen
+    cls
+    IF Header = 1 THEN 
+        DisplayFile("WC:\DISP\OneTop1.BBS")
+        End If
+    IF Header = 2 THEN 
+        DisplayFile("WC:\DISP\OneTop2.BBS")
+        End If
+    IF Header = 3 THEN 
+        DisplayFile("WC:\DISP\OneTop3.BBS")
+        End If
+    IF Header = 4 THEN 
+        DisplayFile("WC:\DISP\OneTop4.BBS")
+        End If
+    IF Header = 5 THEN 
+        DisplayFile("WC:\DISP\OneTop1.BBS")
+        End If
+    IF Header = 6 THEN 
+        DisplayFile("WC:\DISP\OneTop2.BBS")
+        End If
+    IF Header = 7 THEN 
+        DisplayFile("WC:\DISP\OneTop3.BBS")
+        End If
+    IF Header = 8 THEN 
+        DisplayFile("WC:\DISP\OneTop4.BBS")
+        End If
+    IF Header = 9 THEN 
+        DisplayFile("WC:\DISP\OneTop1.BBS")
+        End If
+    IF Header = 10 THEN 
+        DisplayFile("WC:\DISP\OneTop2.BBS")
+        End If
+    Locate 7,1
+    Print "@0B@"; STRING$(79, 196)
+    locate 20, 1
+    Print "@0B@"
+    print STRING$(79, 196)
+    ShowOneLiners
+    locate 22, 1
+    Print "@N@              [@0F@A@N@]dd OneLiner  [@0F@Q@N@]uit  [@0F@Up@N@/@0F@Down@N@] Select OneLiner"
+end sub
+
+sub EditOneLiner(OneLinerToEdit as OneLiner, Position as byte)
+   dim TempOneLiner as string * 120
+   locate 7 + Position, 2
+   SetInitialString(OneLinerToEdit.Entry)
+   TempOneLiner = InputString(80)
+   
+   if trim(TempOneLiner) <> "" then
+   
+      OPEN "wc:\DATA\ONELINER.DAT" FOR RANDOM AS #1 len = len(OneLiner)
+        OneLinerToEdit.Entry = TempOneLiner
+        if lof(1) > 13 then
+           put #1, (lof(1) - 13) + Position, OneLinerToEdit
+        else
+           put #1, Position, OneLinerToEdit
+        end if
+      Close #1
+   end if
+end sub
+
+sub ToggleAnon(OneLinerToEdit as OneLiner, Position as byte)
+   select case OneLinerToEdit.Anon
+      case TRUE
+         OneLinerToEdit.Anon = FALSE
+      case FALSE
+         OneLinerToEdit.Anon = TRUE
+   end select
+   
+      OPEN "wc:\DATA\ONELINER.DAT" FOR RANDOM AS #1 len = len(OneLiner)
+        if lof(1) > 13 then
+           put #1, (lof(1) - 13) + Position, OneLinerToEdit
+        else
+           put #1, Position, OneLinerToEdit
+        end if
+      Close #1
+end sub
+
+ReadCfg
+Cls
+Call ShowHeader
+If ANSIDetected Then 
+    CALL DropLine
+
+    
+    if not ByPassFade then
+       Dim StringToCenter as string
+       Dim ScreenWidth as integer
+       ScreenWidth = 80
+       StringToCenter = Makewild.BBSName + " One-Liner Section..."
+       select case inkey:case "X":end:case "x":end:end select
+       Delay 1
+       locate 13, 1
+       Print "@08@" + STRING((INT(ScreenWidth / 2)) - (INT(LEN(StringToCenter) / 2)), CHR(32)) + StringToCenter
+       select case inkey:case "X":end:case "x":end:end select
+       Delay .1
+       locate 13, 1
+       Print "@07@" + STRING((INT(ScreenWidth / 2)) - (INT(LEN(StringToCenter) / 2)), CHR(32)) + StringToCenter
+       select case inkey:case "X":end:case "x":end:end select
+       Delay .1
+       locate 13, 1
+       Print "@0F@" + STRING((INT(ScreenWidth / 2)) - (INT(LEN(StringToCenter) / 2)), CHR(32)) + StringToCenter
+       select case inkey:case "X":end:case "x":end:end select
+       Delay 1
+       locate 13,1
+       Print STRING(ScreenWidth, CHR(32));
+       select case inkey:case "X":end:case "x":end:end select
+       Delay 1
+    end if
+End If
+
+CALL ShowOneLiners
+
+dim OptionChoice as integer
+dim Lighted as boolean = FALSE
+dim SelectPos as byte
+dim ExitCode as boolean = FALSE
+
+Delay 1
+locate 22, 1
+Print "@N@              [@0F@A@N@]dd OneLiner  [@0F@Q@N@]uit  [@0F@Up@N@/@0F@Down@N@] Select OneLiner"
+
+do while not ExitCode
+
+   do
+      OptionChoice = readkey(100)
+      if OptionChoice <> 0 then
+         exit do
+      end if
+   loop
+
+select case OptionChoice
+
+ case asc("A"), asc("a")
+   if AnsiDetected then
+        locate 22, 1
+        Print "@00@";string(80, 32);
+
+        CALL RaiseLine
+        Cls
+        locate 1, 1
+        Print "@09@"; STRING$(79, 196)
+        locate 1, 5
+        Print "@0B@Please Enter Your One-Liner Here: ";
+        locate 3, 1
+        Print "@0B@"; STRING$(79, 196)
+        Locate 5,1
+        Print "@09@"; STRING$(36, 196);
+        Print "@09@ C@0A@o@0B@l@0C@o@0D@r@0E@s ";
+        Print "@09@"; STRING$(35, 196)
+        Print
+        Print "@00  @08@: @10@Black@09@      @08  @08@: @08@Grey@09@"
+        Print "@01  @08@: @01@Blue       @09@@09  @08@: @09@Bright Blue@09@"
+        Print "@02  @08@: @02@Green      @09@@0A  @08@: @0A@Bright Green@09@"
+        Print "@03  @08@: @03@Cyan       @09@@0B  @08@: @0B@Bright Cyan@09@"
+        Print "@04  @08@: @04@Red        @09@@0C  @08@: @0C@Bright Red@09@"
+        Print "@05  @08@: @05@Magenta    @09@@0D  @08@: @0D@Bright Magenta@09@"
+        Print "@06  @08@: @06@Brown      @09@@0E  @08@: @0E@Bright Brown@09@"
+        Print "@07  @08@: @07@White      @09@@0F  @08@: @0F@Bright White@09@"
+
+        For PutAtSigns = 7 to 14
+            Locate PutAtSigns, 4
+            Print "@";
+            Locate PutAtSigns, 22
+            Print "@";
+        Next PutAtSigns
+        
+    Else
+        Cls
+        Print "@0B@Please Enter Your One-Liner Here: ";
+    End if
+    
+    If ANSIDetected Then locate 2, 1
+    OneLinerGot = AtCodesToUpper(InputString(80))
+    If OneLinerGot <> "" Then 
+        If NoBadWords then
+           Cls
+           Print "@0F@Your OneLiner will appear like so:"
+           print Bar(35,0,9)
+           print "@08@""@0B@";OneLinerGot;"@08@";CHR$(34)
+           print
+           if InputYesNo("@N@Is this okay?",TRUE) then
+              if InputYesNo("@N@Sign anonymously?",FALSE) then
+                 OL.Anon = TRUE
+              else
+                 OL.Anon = FALSE
+              end if
+              
+              Call WriteToDataFile
+              If OutputHtml then Call WriteToHTMLFile
+           else
+              end
+           end if
+        else
+           cls
+           print "@0F@You have entered one or more words in the bad words list."
+           print "Your One-Liner will not be posted."
+           print
+           WaitEnter
+        end if
+        ExitCode = TRUE
+    Else
+        Cls
+        Print "@0B@You can't leave a blank OneLiner!"
+        WaitEnter
+        ExitCode = True
+    End If
+ case KEY_UP, asc("8")
+     If LineCount > 0 then
+        if not Lighted then
+             Lighted = TRUE
+             SelectPos = LineCount
+             LightOn(SelectPos)
+             if GetObjectFlags(OBJECTID_MASTER_SYSOP) <> 0 then
+                Locate 23, 6 : print "@N@Sysop Options: [@0F@E@N@]dit OneLiner [@0F@T@N@]oggle Anonymous Flag [@0F@U@N@]ser Edit";
+             end if
+        else
+           if SelectPos > 1 then
+              LightOff(SelectPos)
+              dec(SelectPos)
+              LightOn(SelectPos)
+           end if
+        end if
+     end if
+
+ case KEY_DOWN, asc("2")
+     If LineCount > 0 then
+        if not Lighted then
+             Lighted = TRUE
+             SelectPos = 1
+             LightOn(SelectPos)
+             if GetObjectFlags(OBJECTID_MASTER_SYSOP) <> 0 then
+                Locate 23, 6 : print "@N@Sysop Options: [@0F@E@N@]dit OneLiner [@0F@T@N@]oggle Anonymous Flag [@0F@U@N@]ser Edit";
+             end if
+        else
+           if SelectPos < LineCount then
+              LightOff(SelectPos)
+              inc(SelectPos)
+              LightOn(SelectPos)
+           end if
+        end if
+     end if
+
+ case KEY_LEFT, KEY_RIGHT, asc("4"), asc("6")
+    If SelectPos > 0 then
+       LightOff(SelectPos)
+       Lighted = FALSE
+       Locate 23, 1
+       print string(80, 32);
+    end if
+    
+ case asc("U"), asc("u")
+    if Lighted and GetObjectFlags(OBJECTID_MASTER_SYSOP) <> 0 then
+       run "Sysop User Editor", str(OneLinerEntry(SelectPos).UserID)
+       RefreshScreen
+       LightOn(SelectPos)
+       Locate 23, 6 : print "@N@Sysop Options: [@0F@E@N@]dit OneLiner [@0F@T@N@]oggle Anonymous Flag [@0F@U@N@]ser Edit";
+    end if
+
+ case asc("E"), asc("e")
+    if Lighted and GetObjectFlags(OBJECTID_MASTER_SYSOP) <> 0 then
+       EditOneLiner(OneLinerEntry(SelectPos), SelectPos)
+       RefreshScreen
+       LightOn(SelectPos)
+        Locate 23, 6 : print "@N@Sysop Options: [@0F@E@N@]dit OneLiner [@0F@T@N@]oggle Anonymous Flag [@0F@U@N@]ser Edit";
+    end if
+
+ case asc("T"), asc("t")
+    if Lighted and GetObjectFlags(OBJECTID_MASTER_SYSOP) <> 0 then
+       ToggleAnon(OneLinerEntry(SelectPos), SelectPos)
+       RefreshScreen
+       LightOn(SelectPos)
+        Locate 23, 6 : print "@N@Sysop Options: [@0F@E@N@]dit OneLiner [@0F@T@N@]oggle Anonymous Flag [@0F@U@N@]ser Edit";
+    end if
+   
+ case asc("Q"), asc("q"), 13
+    ExitCode = TRUE
+    
+end select
+loop
+
+cls
+Print "@0F@Thank You For Using PS-OneLiner 2.0 By Mike Christensen"
+print "@0F@Support - @09@Telnet@08@: @0B@bbs.piscessoft.com @09@WWW@08@: @0B@www.piscessoft.com"
+print "@09@          Email@08@: @0B@hiawatha@piscessoft.com"
+print
+Print "@08@PS-OneLiner 2.0 (c) 1998 Mike Christensen All Rights Reserved"
+Delay 1
+
+End
+

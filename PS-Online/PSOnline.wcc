@@ -1,0 +1,1692 @@
+//New Features
+
+//To Do
+
+#include "pager.wch"
+#include "util.wch"
+#include "cmdline.wch"
+#include "pagemsg.wch"
+#include "dispfile.wch"
+
+type ConfigFile
+   MailNodes as string * 30
+   ChatString as string * 25
+   ChatProgramToRun as string * 25
+   ChatProgramParams as string * 25
+   ActivityWhenChatting as string * 25
+   AgeDisplay as string * 10
+   RegCode as string * 80
+   AllowInfo as boolean
+   AllowPage as boolean
+   AllowChat as boolean
+   NumNodes as byte
+   RealTime as boolean
+   IgnorePageFrom as string * 30
+end type
+
+dim cf as ConfigFile
+
+dim PageStart(250) as integer
+dim PageCount      as integer
+dim choice         as string
+dim ExitCode       as integer
+dim nodeid         as integer
+dim ni             as TNodeInfo
+dim OldNodeStatus(1 to 255) as integer
+dim OldActStatus(1 to 255) as string * 25
+dim UsersOnline    as integer
+dim PeopleInChat   as integer
+dim CannotPage     as integer
+dim BottomNode     as integer = 1
+dim TopNode        as integer
+dim PageNumber     as integer = 1
+
+dim Gender as string
+dim Available as string
+dim s(3) as string
+
+dim row as integer = 9
+dim column as integer = 4
+
+dim pc as TPageControl
+dim count as integer
+dim n as byte = 1
+dim HilightedNode as byte = 1
+dim NodeCounter as integer = 1
+dim ShowPopup as boolean = false
+
+dim msg as TChannelMessage
+
+declare function UpperLower(byval s as string) as string
+
+function DoBasicList
+    PageControlInit(pc, 2)
+    PageStart(0) = 1
+    PageCount = 1
+    
+    print " @0F@LN User-Id         S Class      Age  Min  Calling From        Activity"
+    print " @01@";string(2,196);" ";string(15,196);" ";chr(196);" ";string(10,196);" ";string(3,196);"  ";string(3,196);"  ";string(19,196);" ";string(16,196)
+    
+    count = GetNodeCount
+    n = 1
+    do while n <= count
+      dim nc as TNodeConfig
+      dim TempInfo as TUser
+      GetNodeConfig(n, nc)
+        GetNodeInfo(n, ni)
+        if (CALLTYPE_DIALUP or CALLTYPE_TELNET) or ni.ConnectionId > 0 then
+          if len(str(n)) = 1 then
+            SubText(1) = "0" + str(n)
+          else
+            SubText(1) = str(n)
+          end if
+          dim display as boolean = False
+             if ni.NodeStatus > nsSigningOn then
+               if GetUserById(ni.User.Id, TempInfo, 0) then
+                  dim now as DateTime
+                  dim tdate as DateTime
+                  dim SecOn as integer
+                  dim DaysOn as integer
+                  dim MinutesOn as integer
+                  GetCurrentDateTime(now)
+                  tdate = TempInfo.BirthDate
+                  DateTimeDiff(now, ni.TimeCalled,DaysOn,SecOn)
+                  MinutesOn = int(SecOn / 60)
+    
+                  if TempInfo.Birthdate.High > 0 then
+                    dim RightNow as DateTime
+                    GetCurrentDateTime(RightNow)
+                    dim todate as DateTime
+                    todate = TempInfo.BirthDate
+                    dim age as integer
+                    age = RightNow.year - todate.Year
+                    if (RightNow.month < todate.month) or (RightNow.month = todate.month) and (RightNow.day < todate.day) then
+                      dec(age)
+                    end if
+                    SubText(5) = str(age)
+                  else
+                    SubText(5) = "??"
+                  end if
+    
+                  'if ucase(TempInfo.Security(1)) = "SYSOP" then SubText(1) = "00"
+                  SubText(2) = UpperLower(TempInfo.Info.Name)
+                  select case TempInfo.Sex
+                     case 1
+                        SubText(3) = "M"
+                     case 2
+                        SubText(3) = "F"
+                     case 0
+                        SubText(3) = "?"
+                  end select
+                  SubText(4) = UpperLower(TempInfo.Security(1))
+                  SubText(6) = str(MinutesOn)
+                  SubText(7) = TempInfo.From
+                  SubText(8) = ni.Activity
+                  Display = TRUE
+               end if
+             end if
+          if display then
+            print " ";
+            if ucase(TempInfo.Security(1)) = "SYSOP" then
+               select case TempInfo.Sex
+                  case 1
+                     print "@08@@SUB1:2@ @0C@@SUB2:15@ @09@@SUB3:1@ @07@@SUB4:10@ @04@@SUB5:3@  @05@@SUB6:3@  @0F@@SUB7:19@ @07@@SUB8:15@"
+                  case 2
+                     print "@08@@SUB1:2@ @0C@@SUB2:15@ @0D@@SUB3:1@ @07@@SUB4:10@ @04@@SUB5:3@  @05@@SUB6:3@  @0F@@SUB7:19@ @07@@SUB8:15@"
+                  case 0
+                     print "@08@@SUB1:2@ @0C@@SUB2:15@ @0F@@SUB3:1@ @07@@SUB4:10@ @04@@SUB5:3@  @05@@SUB6:3@  @0F@@SUB7:19@ @07@@SUB8:15@"              
+               end select
+            else
+               select case TempInfo.Sex
+                  case 1
+                     print "@08@@SUB1:2@ @0F@@SUB2:15@ @09@@SUB3:1@ @07@@SUB4:10@ @04@@SUB5:3@  @05@@SUB6:3@  @0F@@SUB7:19@ @07@@SUB8:15@"
+                  case 2
+                     print "@08@@SUB1:2@ @0F@@SUB2:15@ @0D@@SUB3:1@ @07@@SUB4:10@ @04@@SUB5:3@  @05@@SUB6:3@  @0F@@SUB7:19@ @07@@SUB8:15@"
+                  case 0
+                     print "@08@@SUB1:2@ @0F@@SUB2:15@ @0F@@SUB3:1@ @07@@SUB4:10@ @04@@SUB5:3@  @05@@SUB6:3@  @0F@@SUB7:19@ @07@@SUB8:15@"              
+               end select
+            end if
+            inc(n)
+            select case PageControlLine(pc, PageCount > 1)
+              case pcCont
+                PageStart(PageCount) = n
+                inc(PageCount)
+              case pcPrev
+                if PageCount > 1 then
+                  dec(PageCount)
+                  n = PageStart(PageCount-1)
+                  cls
+                end if
+              case pcStop
+                exit do
+            end select
+          else
+            inc(n)
+          end if
+        else
+          inc(n)
+        end if
+    loop
+end function
+
+sub EditNode(Node as byte)
+    do
+      dim Editni as TNodeInfo
+      GetNodeInfo(node, Editni)
+      cls
+      print [SysopNodeHeader "@N@Node # @F@"]; node
+      print
+      print [SysopNodeStatus     "@T@Status      @N@: @F@"];
+      select case Editni.NodeStatus
+        case nsDown
+          print [SysopNodeStatusDown "Down"];
+        case nsUp
+          print [SysopNodeStatusUp "Up"];
+        case nsSigningOn
+          print [SysopNodeStatusSigningOn "Signing on"];
+        case nsLoggedOn
+          print [SysopNodeStatusLoggedOn "Logged on"];
+        case else
+          print [SysopNodeStatusUnknown "(unknown)"];
+      end select
+      print
+      print [SysopNodeUser       "@T@User        @N@: @F@"]; Editni.User.Name
+      print [SysopNodeFrom       "@T@From        @N@: @F@"]; Editni.UserFrom
+      print [SysopNodeActivity   "@T@Activity    @N@: @F@"]; Editni.Activity
+      print [SysopNodeSpeed      "@T@Speed       @N@: @F@"]; Editni.Speed
+      print [SysopNodeCallTime   "@T@Called at   @N@: @F@"]; DateString(Editni.TimeCalled); " "; TimeString(Editni.TimeCalled)
+      print [SysopNodeLastCaller "@T@Last caller @N@: @F@"]; Editni.LastCaller
+      print
+      print "@N@Node @0F@";Node;"@N@, [@H@D@N@]own, [@H@K@N@]ill, [@H@Enter@N@] to Quit?";
+      dim status as string
+      status = InputWord(3)
+      select case ucase(status(1))
+        case "D"
+          print
+          print [SysopNodeDownNone "@N@[@H@U@N@]p, do not bring node down"]
+          print [SysopNodeDownRefuseLogin "@N@[@H@R@N@]efuse login"]
+          print [SysopNodeDownDown "@N@[@H@D@N@]own, bring node down now"]
+          print
+          print [SysopNodeDownPrompt "@N@Node down status?"];
+          status = InputWord(1)
+          select case ucase(status(1))
+            'case "U"
+            '  SetNodeStatusDown(node, ndNone)
+            'case "R"
+            '  SetNodeStatusDown(node, ndRefuseLogin)
+            'case "D"
+            '  SetNodeStatusDown(node, ndDown)
+          end select
+        case "K"
+          SubText(1) = Editni.User.Name
+          if InputYesNo([SysopNodeDisconnect "@N@Do you want to disconnect @F@@SUB1@@N@"], False) then
+            if not WriteChannel(OpenChannel("System.Control."+str(node)), Editni.ConnectionId, SC_DISCONNECT, "", 0) then
+              print [SysopNodeDisconnectFailed "@N@You do not have access to disconnect users."]
+            end if
+          end if
+        case "H"
+          run "Display help file", "sysnode"
+        case "Q", ""
+          exit do
+      end select
+    loop
+end sub
+
+function Bar (LengthOfBar as integer, CharOfBar as integer, BarColor as byte) as string
+   if CharOfBar = 0 then CharOfBar = 196
+   color BarColor
+   Bar = string(LengthOfBar, chr(CharOfBar))
+   if CharOfBar = 196 then mid(Bar, 5, 8) = string(8, chr(205))
+end function
+
+sub Pause
+   print "@0B@[P@03@ress @0B@A@03@ny @0B@K@03@ey @0B@T@03@o @0B@C@03@ontinue@0B@]";
+   do while chr(readkey(100)) = ""
+   loop
+end sub
+
+function UpperLower(byval s as string) as string
+  dim t as string
+  dim i as integer = 1
+  do
+    dim w as string = ExtractWord(s, i)
+    if w = "" then exit do
+    if i > 1 then
+      t = t + " "
+    end if
+    t = t + ucase(w(1))+lcase(mid(w, 2))
+    inc(i)
+  loop
+  UpperLower = t
+end function
+
+function Regged as boolean
+  Regged = true
+end function
+
+function CheckIfMail(NodeToCheck as byte) as boolean
+   if instr(cf.MailNodes, " " + Str(NodeToCheck) + " ") then
+      CheckIfMail = True
+   else
+      CheckIfMail = False
+   end if
+end function
+
+sub DoCounting
+    NodeCounter  = 1
+    UsersOnline  = 0
+    PeopleInChat = 0
+    do while NodeCounter <= Count
+      dim nc as TNodeConfig
+      GetNodeConfig(NodeCounter, nc)
+      'if nc.CallTypesAllowed then
+        GetNodeInfo(NodeCounter, ni)
+        if ni.ConnectionId > 0 and ni.NodeStatus > nsDown and ni.NodeStatus > nsSigningOn then inc(UsersOnline)
+        if UCASE(ni.Activity) = UCASE(cf.ChatString) then inc(PeopleInChat)
+      'end if
+    inc(NodeCounter)
+    loop
+cls
+end sub    
+
+sub RefreshScreen
+    DoCounting
+    PageControlInit(pc, 2)
+    PageStart(0) = 1
+    PageCount = 1
+
+    n = BottomNode
+    color 0,0
+    Cls
+    print " @1F@";chr(218);string(76,196);chr(191)
+    Print "@00@ @1F@";chr(179);"                     Who's Online At @1B@@SYSTEM.BBSNAME:39@@10@";chr(179);"@00@ "
+    Print "@00@ @1F@";chr(179);"             @17@PS-OnLine 3.0 @1F@(c) 1999 Mike Christensen All Rights Reserved    @10@";chr(179);"@00@ "
+    print " @1F@";chr(192);"@10@";string(76,196);chr(217)
+    print "@N@      Time Left: @0B@";
+    if User.Info.Id > 0 then
+       print "@USER.TIMELEFTTODAY:10@@N@Users Online:           @N@Users In Chat:          @N@"
+    else
+       print "N/A       @N@Users Online:           @N@Users In Chat:          @N@"
+    end if
+    print "@00@ @1F@";chr(218);string(76,196);chr(191)
+    print "@00@ @1F@";chr(179);"@1B@  #   Speed  Caller/Status          Location             Activity           @1F@";chr(179);"@00@ "
+    print " @1F@";chr(195);string(76,196);chr(180)
+    
+    do while n <= TopNode
+      dim nc as TNodeConfig
+      GetNodeConfig(n, nc)
+      'if nc.CallTypesAllowed then
+        GetNodeInfo(n, ni)
+        if (CALLTYPE_DIALUP or CALLTYPE_TELNET) or ni.ConnectionId > 0 then
+          SubText(1) = str(n)
+          dim display as boolean = True
+          if ni.ConnectionId > 0 then
+            if ni.NodeStatus > nsDown then
+              if ni.NodeStatus > nsUp then
+                SubText(2) = ni.Speed
+                if ni.NodeStatus > nsSigningOn then
+                  SubText(3) = UpperLower(ni.User.Name)
+                  SubText(4) = ni.UserFrom
+                  SubText(5) = ni.Activity
+                else
+                  SubText(3) = "Caller is logging in"
+                  SubText(4) = ""
+                  SubText(5) = ""
+                end if
+              else
+                SubText(2) = "OPEN "
+                if CALLTYPE_DIALUP then
+                  If CheckIfMail(n) then 
+                     SubText(3) = "Awaiting Mail/Dial-in"
+                  else
+                      SubText(3) = "Awaiting Dial-In"
+                  end if
+                else
+                  SubText(3) = "Awaiting Login"
+                end if
+                SubText(4) = ""
+                SubText(5) = ""
+              end if
+            else
+              SubText(2) = "DOWN "
+              SubText(3) = ""
+              SubText(4) = ""
+              SubText(5) = ""
+            end if
+          else
+            SubText(2) = "OPEN "
+            if CALLTYPE_DIALUP then
+              display = False
+            else
+              SubText(3) = "Awaiting Login"
+            end if
+            SubText(4) = ""
+            SubText(5) = ""
+          end if
+          if display then
+            print "@00@ @1F@";chr(179);"@1D@@SUB1>3@ @1F@@SUB2>7@  @1C@@SUB3:22@ @1E@@SUB4:20@ @1F@@SUB5:19@@10@";chr(179)
+            inc(n)
+            select case PageControlLine(pc, PageCount > 1)
+              case pcCont
+                PageStart(PageCount) = n
+                inc(PageCount)
+              case pcPrev
+                if PageCount > 1 then
+                  dec(PageCount)
+                  n = PageStart(PageCount-1)
+                  cls
+                end if
+              case pcStop
+                exit do
+            end select
+          else 
+            If CheckIfMail(n) then 
+                print "@00@ @1F@";chr(179);"@1D@@SUB1>3@   @1F@OPEN   @1C@Awaiting Mail/Dial-in                                          @10@";chr(179)
+            else
+                'print "@00@ @1F@";chr(179);"@1D@@SUB1>3@   @1F@DOWN   @1C@This Node Is Down                                              @10@";chr(179)            
+                print "@00@ @1F@";chr(179);"@1D@@SUB1>3@   @1F@OPEN   @1C@Awaiting Login                                                 @10@";chr(179)            
+            end if
+            inc(n)
+            select case PageControlLine(pc, PageCount > 1)
+              case pcCont
+                PageStart(PageCount) = n
+                inc(PageCount)
+              case pcPrev
+                if PageCount > 1 then
+                  dec(PageCount)
+                  n = PageStart(PageCount-1)
+                  cls
+                end if
+              case pcStop
+                exit do
+            end select
+
+          end if
+        else
+            if n >= 10 then
+               print "@00@ @1F@";chr(179);"@1D@ ";n;"   @1F@OPEN   @1C@Awaiting Login                                                 @10@";chr(179)
+            else   
+               print "@00@ @1F@";chr(179);"@1D@  ";n;"   @1F@OPEN   @1C@Awaiting Login                                                 @10@";chr(179)
+            end if
+            inc(n)
+            select case PageControlLine(pc, PageCount > 1)
+              case pcCont
+                PageStart(PageCount) = n
+                inc(PageCount)
+              case pcPrev
+                if PageCount > 1 then
+                  dec(PageCount)
+                  n = PageStart(PageCount-1)
+                  cls
+                end if
+              case pcStop
+                exit do
+            end select
+        end if
+      'else
+      '  inc(n)
+      'end if
+    loop
+    
+    dim ScreenRow as byte
+
+    if not ShowPopup then
+        print "@00@ @1F@";chr(192);"@10@";string(76,196);chr(217)
+        print
+        print "@00@ @1F@";chr(218);string(76,196);chr(191)
+        Print "@00@ @1F@";chr(179);" (@1B@A@1F@) PgUp   (@1B@R@1F@)efresh Now                                                   @10@";chr(179);"@00@ "
+        ScreenRow = csrlin - 1
+        Print "@00@ @1F@";chr(179);" (@1B@Z@1F@) PgDn   (@1B@S@1F@)earch (@1B@Number@1F@) Jump (@1B@Up/Down@1F@) Select Node (@1B@!@1F@) List Users     @10@";chr(179);"@00@ "
+        print " @1F@";chr(192);"@10@";string(76,196);chr(217);
+        Locate 5, 42
+        print "@0B@";UsersOnline
+        Locate 5, 67
+        print "@0B@";PeopleInChat
+        
+        if cf.AllowPage or instr(ucase(ParamStr(1)), "P") > 0 then
+          locate ScreenRow, 31
+          print "@1F@(@1B@P@1F@)age User";
+        end if
+    
+        if cf.AllowInfo or instr(ucase(ParamStr(1)), "I") > 0 then
+          locate ScreenRow, 45
+          print "@1F@(@1B@I@1F@)nfo On User";
+        end if
+    
+        if cf.AllowChat or instr(ucase(ParamStr(1)), "L") > 0 then
+          locate ScreenRow, 62
+          print "@1F@(@1B@L@1F@)ive Chat";
+        end if
+     else
+        print "@00@ @1F@";chr(192);"@10@";string(76,196);chr(217)
+        print
+        print "@00@ @1F@";chr(218);string(76,196);chr(191)
+        Print "@00@ @1F@";chr(179);" (@1B@Z@1F@) PgDwn                  Special Sysop Options Menu                      @10@";chr(179);"@00@ "
+        ScreenRow = csrlin - 1
+        Print "@00@ @1F@";chr(179);" (@1B@A@1F@) PgUp   (@1B@C@1F@)onfiguration (@1B@N@1F@)ode Edit (@1B@U@1F@)ser Edit (@1B@B@1F@)roadcast Message     @10@";chr(179);"@00@ "
+        print " @1F@";chr(192);"@10@";string(76,196);chr(217);
+        Locate 5, 42
+        print "@0B@";UsersOnline
+        Locate 5, 67
+        print "@0B@";PeopleInChat
+     end if
+
+end sub
+
+sub ReadConfig
+   
+   dim ConfigFound as boolean
+   
+   open "wc:\data\psonline.cfg" for random as #1 len = len(ConfigFile)
+   get #1, 1, cf
+   if lof(1) > 0 then 
+      ConfigFound = TRUE
+   end if
+   close #1
+   
+   if not ConfigFound then
+
+      cls
+      Print "@0B@PS-OnLine First Time Setup"
+      print
+      print "@0F@Welcome to PS-OnLine.  A configuration file was not found, therefore"
+      print "we assume this is the first time you have ran this program.  A config file"
+      print "(\wc5\data\psonline.cfg) is now being generated using the default values.  You"
+      print "may change these values by using the Configuration option off the PS-OnLine"
+      print "Sysop Menu.  If you are happy with this program, please consider registering"
+      print "it.  Otherwise, please remove this program after 30 days.  Thank you."
+      print Bar(35,0,9)
+      Pause
+    
+      cf.Mailnodes = " "
+      cf.ChatString = "Chat Between Nodes"
+      cf.ChatProgramToRun = "Chat Between Nodes"
+      cf.ChatProgramParams = ""
+      cf.ActivityWhenChatting = "Chat Between Nodes"
+      cf.AgeDisplay = "Exact"
+      cf.RegCode = "Unregistered"
+      cf.AllowInfo = TRUE
+      cf.AllowPage = TRUE
+      cf.AllowChat = TRUE
+      cf.NumNodes = 0
+      cf.RealTime = TRUE
+
+      open "wc:\data\psonline.cfg" for random as #1 len=len(ConfigFile)
+         put #1, 1, cf
+      close #1
+      
+   end if
+   
+end sub
+
+sub WriteConfig
+   open "wc:\data\psonline.cfg" for random as #1 len=len(ConfigFile)
+      put #1, 1, cf
+   close #1
+end sub
+
+function DispYesNo(TStr as boolean) as string
+   If TStr then DispYesNo = "@0F@Yes" else DispYesNo = "@07@No"
+end function
+
+sub SysopMenu
+
+dim ConfigChoice as string * 1
+
+do while ConfigChoice <> "Q"
+      Color 15,0
+      Cls
+      print "@N@PS-OnLine Configuration Manager          Time Left@08@:@0F@ @USER.TIMELEFTTODAY@"
+      print Bar(60,0,9)
+      Print
+
+      print "@N@[@0F@ 1@N@]  @0F@Mailer Nodes                @08@: @0F@";Trim(cf.MailNodes)
+      print "@N@[@0F@ 2@N@]  @0F@Activity For Chat           @08@: @0F@";cf.ChatString
+      print "@N@[@0F@ 3@N@]  @0F@Chat Program To Run         @08@: @0F@";cf.ChatProgramToRun
+      print "@N@[@0F@ 4@N@]  @0F@Chat Program Parameters     @08@: @0F@";cf.ChatProgramParams
+      print "@N@[@0F@ 5@N@]  @0F@Set Activity While Chatting @08@: @0F@";cf.ActivityWhenChatting
+      print "@N@[@0F@ 6@N@]  @0F@Age Display                 @08@: @0F@";cf.AgeDisplay
+      print "@N@[@0F@ 7@N@]  @0F@Allow Page Option           @08@: @0F@";DispYesNo(cf.AllowPage)
+      print "@N@[@0F@ 8@N@]  @0F@Allow Info Option           @08@: @0F@";DispYesNo(cf.AllowInfo)
+      print "@N@[@0F@ 9@N@]  @0F@Allow Chat Option           @08@: @0F@";DispYesNo(cf.AllowChat)
+      print "@N@[@0F@ A@N@]  @0F@Number Of Nodes @07@(0=Default) @08@: @0F@";
+      if cf.NumNodes = 0 then
+         print "Default"
+      else
+         print cf.NumNodes
+      end if
+      print "@N@[@0F@ B@N@]  @0F@Enable Real Time Updating   @08@: @0F@";DispYesNo(cf.RealTime)      
+      print "@N@[@0F@ C@N@]  @0F@Ignore Pages From           @08@: @0F@";cf.IgnorePageFrom
+      print
+      print "@N@[@0F@ R@N@]  @0F@Registration Code           @08@: @0F@";
+      if Regged then
+         Print "Registered"
+      else
+         print "Unregistered"
+      end if
+      print
+      print "@N@[@0F@ H@N@]  @0F@Help On Settings"
+      print "@N@[@0F@ Q@N@]  @0F@Quit Configuration Manager"
+      print 
+
+      do
+          ConfigChoice = ucase(CHR(readkey(100)))
+          if ConfigChoice <> "" then
+             exit do
+          end if
+
+      loop
+
+      select case ucase(ConfigChoice)
+         case "Q"
+            exit do
+         
+         case "C"
+            dim TempIgnorePageFrom as string * 30
+            
+            Locate 22,1 : Print "@0F@Note @08@: @N@Pages from this user will be ignored.  This is useful for Logon/Logoff"
+            Locate 23,8 : Print "@N@notification programs.";
+            do
+               locate 15,36
+               SetInitialString(cf.IgnorePageFrom)
+               TempIgnorePageFrom = InputString(26)
+               If TempIgnorePageFrom <> "" then
+                  cf.IgnorePageFrom = Trim(TempIgnorePageFrom)
+                  WriteConfig
+                  exit do
+               end if
+               If trim(TempIgnorePageFrom) = "" then
+                  exit do
+               end if
+            loop
+
+         case "R"
+            dim TempRegCode as string
+            
+            do
+               locate 17,36
+               print string(44, 32);
+               locate 17,36
+               input TempRegCode
+               If TempRegCode <> "" then
+                  cf.RegCode = Trim(TempRegCode)
+                  WriteConfig
+                  exit do
+               end if
+               If trim(TempRegCode) = "" then
+                  exit do
+               end if
+            loop
+            If NOT Regged then
+               locate 17, 37
+               print string(43,32);
+               locate 17, 37
+               Print "@84@INVALID REGISTRATION CODE!"
+               Delay 3
+            else
+               locate 17, 37
+               print string(43,32);
+               locate 17, 37
+               Print "@8F@Thank you for registering!"
+               Delay 3
+            end if
+            
+         case "H"
+            Cls
+            DisplayFile "PSOLHELP"
+            Print
+            Pause
+         
+         case "1"
+            dim TempMailNode as string * 40
+            
+            Locate 22,1
+            Print "@0F@Note @08@: @N@Seperate multiple mailer nodes with a space (Example: @0F@1 2 5 16@N@).";
+            
+            do
+               locate 4,36
+               SetInitialString(Trim(cf.MailNodes))
+               TempMailNode = InputString(40)
+               If TempMailNode <> "" then
+                  cf.MailNodes = " " + Trim(TempMailNode) + " "
+                  WriteConfig
+                  exit do
+               end if
+               If trim(TempMailNode) = "" then
+                  exit do
+               end if
+            loop
+         
+         case "2"
+            dim TempChatString as string * 26
+            
+            do
+               locate 5,36
+               SetInitialString(cf.ChatString)
+               TempChatString = InputString(26)
+               If TempChatString <> "" then
+                  cf.ChatString = Trim(TempChatString)
+                  WriteConfig
+                  exit do
+               end if
+               If trim(TempChatString) = "" then
+                  exit do
+               end if
+            loop
+         
+         case "3"
+            dim TempChatProgramToRun as string * 26
+            
+            do
+               locate 6,36
+               SetInitialString(cf.ChatProgramToRun)
+               TempChatProgramToRun = InputString(26)
+               If TempChatProgramToRun <> "" then
+                  cf.ChatProgramToRun = Trim(TempChatProgramToRun)
+                  WriteConfig
+                  exit do
+               end if
+               If trim(TempChatProgramToRun) = "" then
+                  exit do
+               end if
+            loop
+         
+         case "4"
+            dim TempChatProgramParams as string * 26
+            
+            do
+               locate 7,36
+               SetInitialString(cf.ChatProgramParams)
+               TempChatProgramParams = InputString(26)
+               If TempChatProgramParams <> "" then
+                  cf.ChatProgramParams = Trim(TempChatProgramParams)
+                  WriteConfig
+                  exit do
+               end if
+               If trim(TempChatProgramParams) = "" then
+                  exit do
+               end if
+            loop
+         
+         case "5"
+            dim TempActivityWhenChatting as string * 26
+            
+            do
+               locate 8,36
+               SetInitialString(cf.ActivityWhenChatting)
+               TempActivityWhenChatting = InputString(26)
+               If TempActivityWhenChatting <> "" then
+                  cf.ActivityWhenChatting = Trim(TempActivityWhenChatting)
+                  WriteConfig
+                  exit do
+               end if
+               If trim(TempActivityWhenChatting) = "" then
+                  exit do
+               end if
+            loop
+         
+         case "6"
+            select case ucase(cf.AgeDisplay)
+               case "EXACT"
+                  cf.AgeDisplay = "Group"
+               case "GROUP"
+                  cf.AgeDisplay = "Exact"
+            end select
+            WriteConfig
+         
+         case "7"
+            select case cf.AllowPage
+               case TRUE
+                  cf.AllowPage = FALSE
+               case FALSE
+                  cf.AllowPage = TRUE
+            end select
+            WriteConfig
+            
+         case "8"
+            select case cf.AllowInfo 
+               case TRUE
+                  cf.AllowInfo = FALSE
+               case FALSE
+                  cf.AllowInfo = TRUE
+            end select
+            WriteConfig
+         
+         case "9"
+            select case cf.AllowChat
+               case TRUE
+                  cf.AllowChat = FALSE
+               case FALSE
+                  cf.AllowChat = TRUE
+            end select
+            WriteConfig
+            
+         case "A"
+            
+            dim TempNumNodes as string * 4
+            
+            do
+               locate 13,36
+               print string(8,32);
+               locate 13,36
+               
+               SetInitialString(str(cf.NumNodes))
+               TempNumNodes = InputString(4)
+               If TempNumNodes <> "" and Trim(TempNumNodes) = Trim(Str(Val(TempNumNodes))) then
+                  cf.NumNodes = Val(TempNumNodes)
+                  WriteConfig
+                  exit do
+               elseif Trim(TempNumNodes) = "" then
+                  exit do
+               end if
+            loop
+            
+         case "B"
+            select case cf.RealTime
+               case TRUE
+                  cf.RealTime = FALSE
+               case FALSE
+                  cf.RealTime = TRUE
+            end select
+            WriteConfig
+
+      end select
+loop
+      
+end sub
+
+sub Light(r as integer, c as integer, highlight as boolean)
+    dim atcode as string = "@N@"
+    if highlight then
+      atcode = "@70@"
+    else
+      atcode = "@1D@"
+    end if
+    locate(r, c)
+    if HilightedNode >= 10 then
+       print atcode; HilightedNode;" @1F@"
+    else
+       print atcode; " ";HilightedNode;" @1F@"
+    end if
+    locate(1, 1)
+end sub
+         
+sub NeedToUpdate
+  dim NodeRunner as byte
+  dim TempNodeInfo as TNodeInfo
+  dim UpdateRow as byte
+  
+  for NodeRunner = BottomNode to TopNode
+     GetNodeInfo(NodeRunner, TempNodeInfo)
+     if OldNodeStatus(NodeRunner) <> TempNodeInfo.NodeStatus or OldActStatus(NodeRunner) <> TempNodeInfo.Activity then
+        UpdateRow = NodeRunner mod 10 + 8 
+        Locate UpdateRow, 7
+        dim nc as TNodeConfig
+        GetNodeConfig(NodeRunner, nc)
+        'if nc.CallTypesAllowed then
+            GetNodeInfo(NodeRunner, ni)
+            if nc.CallTypesAllowed and (CALLTYPE_DIALUP or CALLTYPE_TELNET) or ni.ConnectionId > 0 then
+            'if (CALLTYPE_DIALUP or CALLTYPE_TELNET) or ni.ConnectionId > 0 then
+              SubText(1) = str(NodeRunner)
+              dim display as boolean = True
+              if ni.ConnectionId > 0 then
+                if ni.NodeStatus > nsDown then
+                  if ni.NodeStatus > nsUp then
+                    SubText(2) = ni.Speed
+                    if ni.NodeStatus > nsSigningOn then
+                      SubText(3) = UpperLower(ni.User.Name)
+                      SubText(4) = ni.UserFrom
+                      SubText(5) = ni.Activity
+                    else
+                      SubText(3) = "Caller is logging in"
+                      SubText(4) = ""
+                      SubText(5) = ""
+                    end if
+                  else
+                    SubText(2) = "OPEN "
+                    if nc.CallTypesAllowed and CALLTYPE_DIALUP then
+                    'if CALLTYPE_DIALUP then
+                      If CheckIfMail(NodeRunner) then 
+                         SubText(3) = "Awaiting Mail/Dial-in"
+                      else
+                          SubText(3) = "Awaiting Dial-In"
+                      end if
+                    else
+                      SubText(3) = "Awaiting Login"
+                    end if
+                    SubText(4) = ""
+                    SubText(5) = ""
+                  end if
+                else
+                  SubText(2) = "DOWN "
+                  SubText(3) = ""
+                  SubText(4) = ""
+                  SubText(5) = ""
+                end if
+              else
+                SubText(2) = "OPEN "
+                if CALLTYPE_DIALUP then
+                  display = False
+                else
+                  SubText(3) = "Awaiting Login"
+                end if
+                SubText(4) = ""
+                SubText(5) = ""
+              end if
+              if display then
+                print "@1F@@SUB2>7@@1C@  @SUB3:22@ @1E@@SUB4:20@ @1F@@SUB5:19@@10@";chr(179)
+              else 
+                If CheckIfMail(NodeRunner) then 
+                    print "@1F@OPEN   @1C@Awaiting Mail/Dial-in                                          @10@";chr(179)
+                else
+                    print "@1F@OPEN   @1C@Awaiting Login                                                 @10@";chr(179)            
+                end if
+              end if
+            end if
+        'end if
+     end if
+  next NodeRunner   
+
+end sub
+
+sub GetPage(cmsg as TChannelMessage)
+
+  dim i as integer
+
+  select case cmsg.UserData
+    case SP_USER_PAGE
+      dim pmsg as TPageMessage absolute cmsg.Data
+      if ucase(trim(pmsg.From)) = ucase(trim(cf.IgnorePageFrom)) then exit sub
+      color 7,0
+      cls
+      print " @1F@";chr(218);string(76,196);chr(191)
+      Print "@00@ @1F@";chr(179);"                     Who's Online At @1B@@SYSTEM.BBSNAME:39@@10@";chr(179);"@00@ "
+      Print "@00@ @1F@";chr(179);"             @17@PS-OnLine 3.0 @1F@(c) 1999 Mike Christensen All Rights Reserved    @10@";chr(179);"@00@ "
+      print " @1F@";chr(192);"@10@";string(76,196);chr(217);"@0F@"
+      print
+      print chr(7)
+      SubText(1) = UpperLower(pmsg.From)
+                        
+      if pmsg.From = "NODEify" then
+         print pmsg.Message(1);"  ";pmsg.Message(2)
+      elseif pmsg.From <> "NODEify" then
+         Print "  @0F@System Page From @0B@@SUB1@@0F@!"
+         print "  ";Bar(35,0,3)
+         
+         if pmsg.InviteToChat then
+           print "  @F@You have received an invitation to chat!"
+         end if
+         
+            for i = 1 to 3
+              if pmsg.Message(i) <> "" then
+                print "   @08@""@N@";pmsg.Message(i);"@08@""@N@"
+              end if
+            next
+            print "  ";Bar(35,0,3)
+            Print
+         if pmsg.InviteToChat then
+            If InputYesNo("  Do you wish to enter chat now?",TRUE) then 
+                color 0,0
+                cls
+                SetNodeActivity(cf.ActivityWhenChatting)
+                run cf.ChatProgramToRun, cf.ChatProgramParams
+                SetNodeActivity("Who's Online?")
+                cls
+            end if
+         else
+            dim PageFrom as string = pmsg.From
+            dim Otherni as TNodeInfo
+            if not GetNodeInfoByName(PageFrom, Otherni) then
+              dim TempNameStore as TuserInfo
+              if LookupName(pmsg.From, TempNameStore) then
+                  print "  @N@User has logged off.  No responce possible."
+                  print
+                  Pause
+                  Exit Sub
+              else
+                  print "  @N@You cannot reply to an entity."
+                  print
+                  Pause
+                  Exit Sub
+              end if
+            end if
+            print "  @N@Reply Message? @08@(@07@Type @0F@*@07@ in front of page to request a chat@08@) : @0F@"
+            dim ReplyText as string * 75
+            print " ";
+            ReplyText = InputString(75)
+            if trim(ReplyText) <> "" then
+               dim rmsg as TPageMessage
+               clear rmsg
+
+               if ucase(trim(ReplyText(1))) = "*" then
+                  mid(ReplyText,1,1) = ""
+                  rmsg.InviteToChat = True
+               end if
+               
+               rmsg.From = User.Info.Name
+               rmsg.Message(1) = ReplyText
+               WriteChannel(OpenChannel("System.Page"), ni.ConnectionId, 0, rmsg, sizeof(rmsg))
+            end if            
+         end if
+      end if
+      
+    'case SP_SYSOP_CHAT
+    '  run "Sysop chat"
+    case SP_NEW_MESSAGE
+      dim nmsg as TSystemPageNewMessage absolute cmsg.Data
+      color 7,0
+      cls
+      print " @1F@";chr(218);string(76,196);chr(191)
+      Print "@00@ @1F@";chr(179);"                     Who's Online At @1B@@SYSTEM.BBSNAME:39@@10@";chr(179);"@00@ "
+      Print "@00@ @1F@";chr(179);"             @17@PS-OnLine 3.0 @1F@(c) 1999 Mike Christensen All Rights Reserved    @10@";chr(179);"@00@ "
+      print " @1F@";chr(192);"@10@";string(76,196);chr(217);"@0F@"
+      print
+      print chr(7)
+      SubText(1) = nmsg.From.Name
+      print "  @F@@SUB1@@N@ has just written you a new message."
+      SubText(1) = str(nmsg.Conference)
+      SubText(2) = nmsg.ConferenceName
+      print "  @N@Conference: @SUBNUM1@ (@SUB2@)"
+      SubText(1) = nmsg.Subject
+      print "@N@   Subject: @SUB1@"
+      print
+      if InputYesNo("  @N@Do you wish to read new mail now?", TRUE) then
+         run "Check For Mail"
+      end if
+    case SP_ALT_NUMBER_FILE
+      dim tn as integer absolute cmsg.Data
+      if Exists("wc:\disp\alt"+str(tn)+".bbs") then
+        print
+        print
+        DisplayFile("alt"+str(tn))
+        print
+      end if
+  end select
+  RefreshScreen
+  Light(row, column, TRUE)
+end sub
+
+ReadConfig
+
+  'if cf.NumNodes > 0 and cf.NumNodes < GetNodeCount then
+  if cf.NumNodes > 0 then
+     count = cf.NumNodes
+  else
+     count = GetNodeCount
+  end if
+  
+  'if cf.NumNodes < 10 and cf.NumNodes > 0 and GetNodeCount >= cf.NumNodes then
+  if cf.NumNodes < 10 and cf.NumNodes > 0 then
+     TopNode = cf.NumNodes
+  else
+     TopNode = 10
+  end if
+  
+  if ucase(ParamStr(1)) = "BASIC" and Regged then
+     color 7,0
+     print " @1F@";chr(218);string(76,196);chr(191)
+     Print "@00@ @1F@";chr(179);"                     Who's Online At @1B@@SYSTEM.BBSNAME:39@@10@";chr(179);"@00@ "
+     Print "@00@ @1F@";chr(179);"             @17@PS-OnLine 3.0 @1F@(c) 1999 Mike Christensen All Rights Reserved    @10@";chr(179);"@00@ "
+     print " @1F@";chr(192);"@10@";string(76,196);chr(217);"@0F@"
+     print
+     
+     DoBasicList
+     
+     print
+     print " @01@";string(78,196)
+     print
+     end
+  end if
+  
+  SetNodeActivity("Who's Online?")
+  RefreshScreen
+  dim TempLooperInfo as TNodeinfo
+  dim SaveLooper as byte
+  dim PageName as string
+
+  Light(row, column, TRUE)
+
+  do
+    if cf.RealTime then
+       for SaveLooper = 1 to GetNodeCount
+          GetNodeInfo(SaveLooper, TempLooperInfo)
+          OldNodeStatus(SaveLooper) = TempLooperInfo.NodeStatus
+          OldActStatus(SaveLooper) = TempLooperInfo.Activity
+       next
+    end if
+    
+    do while ReadChannel(0, msg)
+       GetPage(msg)
+    loop
+
+  
+    dim key as integer = ReadKey
+    select case key
+      case KEY_UP //, asc("8")
+        if HilightedNode > BottomNode then
+          Light(row, column, FALSE)
+          row = row - 1
+          HilightedNode = HilightedNode - 1
+          Light(row, column, TRUE)
+        elseif HilightedNode = BottomNode and HilightedNode > 1 then 
+          dec(PageNumber)
+          BottomNode = (PageNumber * 10) - 9
+          TopNode = (PageNumber * 10)
+          If BottomNode < 1 then BottomNode = 1
+          row = 18
+          HilightedNode = TopNode
+          RefreshScreen
+          Light(row, column, TRUE)
+        end if
+        
+      case KEY_DOWN //, asc("2")
+        if HilightedNode < TopNode then
+          Light(row, column, FALSE)
+          inc(row)
+          inc(HilightedNode)
+          Light(row, column, TRUE)
+        elseif HilightedNode = TopNode and HilightedNode < count then 
+          inc(PageNumber)
+          BottomNode = (PageNumber * 10) - 9
+          TopNode = (PageNumber * 10)
+          If TopNode > Count then TopNode = Count
+          row = 9
+          HilightedNode = BottomNode
+          RefreshScreen
+          Light(row, column, TRUE)
+        end if
+      case asc("A"), asc("a")
+         If PageNumber > 1 then
+           dec(PageNumber)
+           BottomNode = (PageNumber * 10)-10
+           TopNode = (PageNumber * 10)
+           If BottomNode < 1 then BottomNode = 1
+           row = 9
+           HilightedNode = BottomNode
+           RefreshScreen
+           Light(row, column, TRUE)
+         end if
+      case asc("Z"), asc("z")
+        if TopNode < Count then  
+           inc(PageNumber)
+           BottomNode = (PageNumber * 10) - 9
+           TopNode = (PageNumber * 10)
+           If TopNode > Count then TopNode = Count
+           row = 9
+           HilightedNode = BottomNode
+           RefreshScreen
+           Light(row, column, TRUE)
+        end if                  
+      case 13, asc("Q"), asc("q")
+        print "@N@"
+        cls
+        exit do
+      case asc("r"), asc("R")
+        cls
+        RefreshScreen
+        Light(row, column, TRUE)
+      case asc("i"), asc("I")
+       if cf.AllowInfo or instr(ucase(ParamStr(1)), "I") > 0 then
+         nodeid = HilightedNode
+         if GetNodeInfo(nodeid, ni) then
+            dim u as TUser
+            if ni.User.Name <> "" and GetUserByName(ni.User.Name, u, 0) then
+                dim now as DateTime
+                GetCurrentDateTime(now)
+                dim days as integer
+                dim secs as integer
+                DateTimeDiff(now, ni.TimeCalled, days, secs)
+                if u.Sex = 1 then 
+                   Gender = "Male" 
+                elseif u.Sex = 2 then
+                   Gender = "Female"
+                else
+                   Gender = "Not Disclosed"
+                end if
+                
+                GetCurrentDateTime(now)
+                dim tdate as DateTime
+                tdate = u.BirthDate
+
+                dim age as integer
+           
+                age = now.year - tdate.Year
+                if (now.month < tdate.month) or (now.month = tdate.month) and (now.day < tdate.day) then
+                   dec(age)
+                end if
+                
+                If ucase(cf.AgeDisplay) = "GROUP" then
+                   dim AgeGroup as String
+                   if Age <= 12 then AgeGroup = "Child"
+                   If Age > 12 and Age < 20 then AgeGroup = "Teen"
+                   If Age >= 20 then AgeGroup = "Adult"
+                end if
+                                
+                if u.PageAvailable then Available = "Yes" else Available = "No"
+                
+
+                locate 5,15 : print "@1F@";chr(218);string(2,196);" @1D@User Info@1F@ ";string(34,196);chr(191)
+                locate 6,15 : Print "@1F@";chr(179);string(47,32);chr(179);"@00@ "
+                SubText(1) = UpperLower(u.Info.Name)
+                SubText(2) = u.Security(1)
+                SubText(3) = DateString(u.FirstCall)
+                SubText(4) = u.From
+                SubText(5) = Gender
+                If ucase(cf.AgeDisplay) = "GROUP" then 
+                   SubText(6) = AgeGroup   
+                end if
+                If ucase(cf.AgeDisplay) = "EXACT" then 
+                   SubText(6) = str(age)
+                end if
+                SubText(7) = ni.Activity
+                SubText(8) = Available
+                if ni.LastCaller <> "" then
+                   SubText(9) = UpperLower(ni.LastCaller)
+                else
+                   SubText(9) = "None"
+                end if
+                
+                locate 7,15 : Print "@1F@";chr(179);"@1F@  Name                @18@:@1B@ @SUB1:23@@1F@";chr(179);"@00@ "
+                locate 8,15 : Print "@1F@";chr(179);"@1F@  Security Level      @18@:@1B@ @SUB2:23@@1F@";chr(179);"@00@ "
+                locate 9,15 : Print "@1F@";chr(179);"@1F@  First Call          @18@:@1B@ @SUB3:23@@1F@";chr(179);"@00@ "
+                locate 10,15 : Print "@1F@";chr(179);"@1F@  Location            @18@:@1B@ @SUB4:23@@1F@";chr(179);"@00@ "
+                locate 11,15 : Print "@1F@";chr(179);"@1F@  User's Gender       @18@:@1B@ @SUB5:23@@1F@";chr(179);"@00@ "
+                If ucase(cf.AgeDisplay) = "GROUP" then 
+                   locate 12,15 : Print "@1F@";chr(179);"@N@  User's Age Group    @18@:@1B@ @SUB6:23@@1F@";chr(179);"@00@ "
+                end if
+                
+                If ucase(cf.AgeDisplay) = "EXACT" then 
+                   locate 12,15 : Print "@1F@";chr(179);"@1F@  User's Age          @18@:@1B@ @SUB6:23@@1F@";chr(179);"@00@ "
+                end if
+                locate 13,15 : Print "@1F@";chr(179);"@1F@  Activity            @18@:@1B@ @SUB7:23@@1F@";chr(179);"@00@ "
+                locate 14,15 : Print "@1F@";chr(179);"@1F@  Available For Chat? @18@:@1B@ @SUB8:23@@1F@";chr(179);"@00@ "
+                locate 15,15 : Print "@1F@";chr(179);string(47,32);chr(179);"@00@ "
+                locate 16,15 : Print "@1F@";chr(179);"@1F@  Last caller         @18@:@1B@ @SUB9:23@@1F@";chr(179);"@00@ "
+                locate 17,15 : Print "@1F@";chr(179);string(47,32);chr(179);"@00@ "
+                locate 18,15 : print "@1F@";chr(192);"@10@";string(47,196);chr(217);"@00@ "
+                locate 19,16 : print "@10@";string(49,223)
+                Do while ReadKey(100) = 0
+                Loop
+                RefreshScreen
+                Light(row, column, TRUE)
+            else
+               SubText(1) = Str(HilightedNode)
+               locate 10,15 : print "@1F@";chr(218);string(2,196);" @1D@Node Info@1F@ ";string(34,196);chr(191)
+               locate 11,15 : Print "@1F@";chr(179);string(47,32);chr(179);"@00@ "
+               dim Viewni as TNodeInfo
+               GetNodeInfo(HilightedNode, Viewni)
+               select case Viewni.NodeStatus
+                 case nsDown
+                   if CheckIfMail(HilightedNode) then
+                      SubText(2) = "Up"
+                   else 
+                      SubText(2) = "Down"
+                   end if
+                 case nsUp
+                   SubText(2) = "Up"
+                 case nsSigningOn
+                   SubText(2) = "Signing On"
+                 case nsLoggedOn
+                   SubText(2) = "Logged On"
+                 case else
+                   SubText(2) = "???"
+               end select
+               if Viewni.LastCaller <> "" then
+                  SubText(3) = UpperLower(Viewni.LastCaller)
+               else
+                  SubText(3) = "None"
+               end if
+               locate 12,15 : Print "@1F@";chr(179);"@1F@  Node # @1B@@SUB1:38@@1F@";chr(179);"@00@ "
+               
+               locate 13,15 : Print "@1F@";chr(179);"@1F@  Status      @18@: @1B@@SUB2:31@@1F@";chr(179);"@00@ "
+               locate 14,15 : Print "@1F@";chr(179);"@1F@  Last caller @18@: @1B@@SUB3:31@@1F@";chr(179);"@00@ "
+               locate 15,15 : Print "@1F@";chr(179);string(47,32);chr(179);"@00@ "
+               locate 16,15 : print "@1F@";chr(192);"@10@";string(47,196);chr(217);"@00@ "
+               locate 17,16 : print "@10@";string(49,223)
+               Do while ReadKey(100) = 0
+               Loop
+               Cls
+               RefreshScreen
+               Light(row, column, TRUE)
+               
+               end if
+            end if
+         end if
+       
+      case asc("l"), asc("L")
+        If cf.AllowChat or instr(ucase(ParamStr(1)), "L") > 0 then
+           color 0,0
+           cls
+           SetNodeActivity(cf.ActivityWhenChatting)
+           run cf.ChatProgramToRun, cf.ChatProgramParams
+           SetNodeActivity("Who's Online?")
+           cls
+           RefreshScreen
+           Light(row, column, TRUE)
+        end if
+        
+      case asc("p"), asc("P")
+        if cf.AllowPage or instr(ucase(ParamStr(1)), "P") > 0 then
+           CannotPage = 0
+           nodeid = HilightedNode
+           if GetNodeInfo(nodeid, ni) then
+              if ni.User.Name <> "" and GetUserByName(ni.User.Name, u, 0) then
+                 PageName = ni.User.Name
+              end if
+              if ni.User.Name = "" then CannotPage = 1
+           end if
+
+           if GetObjectFlags(OBJECTID_MASTER_SYSOP) = 0 and not ni.UserPageAvailable then
+              CannotPage = 1
+           end if
+           if PageName <> "" then
+               if not GetNodeInfoByName(PageName, ni) and CannotPage = 0 then
+                 locate 10,15 : print "@1F@";chr(218);string(47,196);chr(191)
+                 locate 11,15 : Print "@1F@";chr(179);string(47,32);chr(179);"@00@ "
+                 locate 12,15 : Print "@1F@";chr(179);"@1C@  Error @18@: @1F@That user has logged off the system@1F@";string(2,32);chr(179);"@00@ "
+                 locate 13,15 : Print "@1F@";chr(179);string(47,32);chr(179);"@00@ "
+                 locate 14,15 : print "@1F@";chr(192);"@10@";string(47,196);chr(217);"@00@ "
+                 locate 15,16 : print "@10@";string(49,223)
+                 
+                 Do while ReadKey(100) = 0
+                 Loop
+                 RefreshScreen
+                 Light(row, column, TRUE)
+                 CannotPage = 1
+               end if
+               if GetObjectFlags(OBJECTID_MASTER_SYSOP) = 0 and not ni.UserPageAvailable then
+                 locate 10,15 : print "@1F@";chr(218);string(47,196);chr(191)
+                 locate 11,15 : Print "@1F@";chr(179);string(47,32);chr(179);"@00@ "
+                 locate 12,15 : Print "@1F@";chr(179);"@1C@  That user is not available for paging.@1F@     ";string(2,32);chr(179);"@00@ "
+                 locate 13,15 : Print "@1F@";chr(179);string(47,32);chr(179);"@00@ "
+                 locate 14,15 : print "@1F@";chr(192);"@10@";string(47,196);chr(217);"@00@ "
+                 locate 15,16 : print "@10@";string(49,223)
+                 Do while ReadKey(100) = 0
+                 Loop
+                 RefreshScreen
+                 Light(row, column, TRUE)
+                 CannotPage = 1
+               end if
+               if CannotPage = 0 then
+                   do
+                     locate 10,3 : print "@1F@";chr(218);string(74,196);chr(191)
+                     locate 11,3 : Print "@1F@";chr(179);"@1C@ Message @1F@(Type @1D@*@1F@ in front of page to request a chat)";string(22,32);chr(179)
+                     locate 12,3 : Print "@1F@";chr(179);string(74,32);chr(179)
+                     locate 13,3 : Print "@1F@";chr(179);string(74,32);chr(179)
+                     locate 14,3 : Print "@1F@";chr(179);string(74,32);chr(179)
+                     locate 15,3 : Print "@1F@";chr(179);string(74,32);chr(179)
+                     locate 14,3 : Print "@1F@";chr(179);string(74,32);chr(179)
+                     locate 16,3 : print "@1F@";chr(192);"@10@";string(74,196);chr(217)
+                     locate 17,4 : print "@10@";string(73,223)
+     
+                     clear s
+                     Locate 13,4
+                     s(1) = InputString(70)
+                     if trim(s(1)) <> "" then 
+                        Locate 14,4
+                        Print "@10@";
+                        s(2) = InputString(70)
+                     end if
+                     if trim(s(2)) <> "" then 
+                        Locate 15,4
+                        Print "@10@";
+                        s(3) = InputString(70)
+                     end if
+                     if instr(s(1), "@LOGOFF@") = 0 and instr(s(2), "@LOGOFF@") = 0 and instr(s(3), "@LOGOFF@") = 0 then
+                       exit do
+                     end if
+                     locate 10,15 : print "@1F@";chr(218);string(47,196);chr(191)
+                     locate 11,15 : Print "@1F@";chr(179);string(47,32);chr(179);"@00@ "
+                     locate 12,15 : Print "@1F@";chr(179);"@1C@ You have used an illegal string in your page. @1F@";chr(179);"@00@ "
+                     locate 13,15 : Print "@1F@";chr(179);string(47,32);chr(179);"@00@ "
+                     locate 14,15 : print "@1F@";chr(192);"@10@";string(47,196);chr(217);"@00@ "
+                     locate 15,16 : print "@10@";string(49,223)
+                     Do while ReadKey(100) = 0
+                     Loop
+                   loop
+                   if LTRIM(RTRIM(s(1))) <> "" then
+                       dim pmsg as TPageMessage
+                       clear pmsg
+                       if ucase(trim(mid(s(1),1,1))) = "*" then
+                          mid(s(1),1,1) = ""
+                          pmsg.InviteToChat = True
+                       end if
+                       pmsg.From = User.Info.Name
+                       pmsg.Message(1) = s(1)
+                       pmsg.Message(2) = s(2)
+                       pmsg.Message(3) = s(3)
+                       WriteChannel(OpenChannel("System.Page"), ni.ConnectionId, 0, pmsg, sizeof(pmsg))
+                   else
+                       locate 10,15 : print "@1F@";chr(218);string(47,196);chr(191)
+                       locate 11,15 : Print "@1F@";chr(179);string(47,32);chr(179);"@00@ "
+                       locate 12,15 : Print "@1F@";chr(179);"@1C@  Blank messages are not allowed.@1F@            ";string(2,32);chr(179);"@00@ "
+                       locate 13,15 : Print "@1F@";chr(179);string(47,32);chr(179);"@00@ "
+                       locate 14,15 : print "@1F@";chr(192);"@10@";string(47,196);chr(217);"@00@ "
+                       locate 15,16 : print "@10@";string(49,223)
+                       Do while ReadKey(100) = 0
+                       Loop
+                   end if
+        
+                   cls
+                   RefreshScreen
+                   Light(row, column, TRUE)
+               end if
+           end if
+        end if
+
+      case asc("b"), asc("B")
+           if GetObjectFlags(OBJECTID_MASTER_SYSOP) then
+              locate 10,3 : print "@1F@";chr(218);string(74,196);chr(191)
+              locate 11,3 : Print "@1F@";chr(179);"@1C@ Global Message @1F@(Type @1D@*@1F@ in front of page to request a chat)";string(15,32);chr(179)
+              locate 12,3 : Print "@1F@";chr(179);string(74,32);chr(179)
+              locate 13,3 : Print "@1F@";chr(179);string(74,32);chr(179)
+              locate 14,3 : Print "@1F@";chr(179);string(74,32);chr(179)
+              locate 15,3 : Print "@1F@";chr(179);string(74,32);chr(179)
+              locate 14,3 : Print "@1F@";chr(179);string(74,32);chr(179)
+              locate 16,3 : print "@1F@";chr(192);"@10@";string(74,196);chr(217)
+              locate 17,4 : print "@10@";string(73,223)
+ 
+              clear s
+              Locate 13,4
+              s(1) = InputString(70)
+              if trim(s(1)) <> "" then 
+                 Locate 14,4
+                 Print "@10@";
+                 s(2) = InputString(70)
+              end if
+              if trim(s(2)) <> "" then 
+                 Locate 15,4
+                 Print "@10@";
+                 s(3) = InputString(70)
+              end if
+
+              if LTRIM(RTRIM(s(1))) <> "" then
+                  dim gpmsg as TPageMessage
+                  clear gpmsg
+                  if ucase(trim(mid(s(1),1,1))) = "*" then
+                     mid(s(1),1,1) = ""
+                     gpmsg.InviteToChat = True
+                  end if
+                  gpmsg.From = "Global System Message"
+                  gpmsg.Message(1) = s(1)
+                  gpmsg.Message(2) = s(2)
+                  gpmsg.Message(3) = s(3)
+               
+                  WriteChannel(OpenChannel("System.Page"), 0, 0, gpmsg, sizeof(gpmsg))
+              else
+                  locate 10,15 : print "@1F@";chr(218);string(47,196);chr(191)
+                  locate 11,15 : Print "@1F@";chr(179);string(47,32);chr(179);"@00@ "
+                  locate 12,15 : Print "@1F@";chr(179);"@1C@  Blank messages are not allowed.@1F@            ";string(2,32);chr(179);"@00@ "
+                  locate 13,15 : Print "@1F@";chr(179);string(47,32);chr(179);"@00@ "
+                  locate 14,15 : print "@1F@";chr(192);"@10@";string(47,196);chr(217);"@00@ "
+                  locate 15,16 : print "@10@";string(49,223)
+                  Do while ReadKey(100) = 0
+                  Loop
+              end if
+    
+              cls
+              RefreshScreen
+              Light(row, column, TRUE)
+
+           end if
+
+        case asc("*")
+           if GetObjectFlags(OBJECTID_MASTER_SYSOP) <> 0 then
+              Select case ShowPopup
+                 case TRUE
+                    ShowPopup = False
+                 case FALSE
+                    ShowPopup = True
+              end select
+              RefreshScreen
+              Light(row, column, TRUE)
+           end if
+
+        case asc("C"), asc("c")
+           if GetObjectFlags(OBJECTID_MASTER_SYSOP) <> 0 then
+              SysopMenu
+              RefreshScreen
+              Light(row, column, TRUE)
+           end if
+
+           
+        case asc("U"), asc("u")
+           if GetObjectFlags(OBJECTID_MASTER_SYSOP) then
+              dim TempN as TNodeInfo
+              GetNodeInfo(HilightedNode, TempN)
+              if TempN.user.id > 0 then
+                 color 7,0
+                 cls
+                 run "Sysop User Editor", str(TempN.user.id)
+                 RefreshScreen
+                 Light(row, column, TRUE)
+              end if
+           end if
+
+        case asc("N"), asc("n")
+           if GetObjectFlags(OBJECTID_MASTER_SYSOP) then
+              color 7,0
+              cls
+              EditNode(HilightedNode)
+              RefreshScreen
+              Light(row, column, TRUE)
+           end if
+           
+        case 48 to 57
+           locate 10,30 : print "@1F@";chr(218);string(24,196);chr(191)
+           locate 11,30 : Print "@1F@";chr(179);"                        ";chr(179);"@00@ "
+           locate 12,30 : Print "@1F@";chr(179);" Jump To Node @18@: @3F@      @1F@  ";chr(179);"@00@ "
+           locate 13,30 : Print "@1F@";chr(179);"                        ";chr(179);"@00@ "
+           locate 14,30 : print "@1F@";chr(192);"@10@";string(24,196);chr(217);"@00@ "
+           locate 15,31 : print "@10@";string(26,223)
+           dim TempJumpToNode as byte
+           dim StringHolder as string = ""
+           dim DigitCounter as byte = 0
+           Locate 12,47
+           PushKey(key)
+           for DigitCounter = 1 to 3
+              TempJumpToNode = 0
+              do
+                 TempJumpToNode = ReadKey(100)
+                 if TempJumpToNode >= 48 and TempJumpToNode <= 57 then exit do
+                 if TempJumpToNode = 13 then exit for
+                 if TempJumpToNode = 8 and DigitCounter > 1 then
+                    Mid(StringHolder,DigitCounter - 1,1) = ""
+                    dec(DigitCounter)
+                    locate 12,46 + DigitCounter
+                    Print "@3F@ ";
+                    locate 12,46 + DigitCounter
+                 end if
+              loop
+              locate 12,46 + DigitCounter
+              Print "@3F@";chr(TempJumpToNode);
+              StringHolder = StringHolder + chr(TempJumpToNode)
+           next
+           if Val(StringHolder) <= Count and Val(StringHolder) > 0 then
+               //Light(row, column, FALSE)
+               HilightedNode = Val(StringHolder)
+               PageNumber = int(HilightedNode / 11) + 1
+               BottomNode = (PageNumber * 10) - 9
+               TopNode = (PageNumber * 10)
+               If TopNode > Count then TopNode = Count
+               if HilightedNode mod 10 = 0 then
+                  row = HilightedNode mod 10 + 18
+               else
+                  row = HilightedNode mod 10 + 8 
+               end if
+               RefreshScreen
+               Light(row, column, TRUE)
+            else
+               RefreshScreen
+               Light(row, column, TRUE)
+            end if
+            
+        case asc("S"), asc("s")
+           locate 10,15 : print "@1F@";chr(218);string(47,196);chr(191)
+           locate 11,15 : Print "@1F@";chr(179);string(47,32);chr(179);"@00@ "
+           locate 12,15 : Print "@1F@";chr(179);" Search For User @18@: @3F@";string(25,32);"@1F@";string(3,32);chr(179);"@00@ "
+           locate 13,15 : Print "@1F@";chr(179);string(47,32);chr(179);"@00@ "
+           locate 14,15 : print "@1F@";chr(192);"@10@";string(47,196);chr(217);"@00@ "
+           locate 15,16 : print "@10@";string(49,223)
+           dim TempJumpToUser as byte
+           dim PlaceCounter as byte = 0
+           dim UserHolder as string = ""
+           Locate 12,35
+           for PlaceCounter = 1 to 25
+              TempJumpToUser = 0
+              do
+                 TempJumpToUser = ReadKey(100)
+                 if TempJumpToUser >= 32 and TempJumpToUser <= 126 then exit do
+                 if TempJumpToUser = 13 then exit for
+                 if TempJumpToUser = 8 and PlaceCounter > 1 then
+                    Mid(UserHolder,PlaceCounter - 1,1) = ""
+                    dec(PlaceCounter)
+                    locate 12,34 + PlaceCounter
+                    Print "@3F@ ";
+                    locate 12,34 + PlaceCounter
+                 end if
+              loop
+              locate 12,34 + PlaceCounter
+              Print "@3F@";chr(TempJumpToUser);
+              UserHolder = UserHolder + chr(TempJumpToUser)
+           next
+           
+           dim JumpToUserRec as TUserInfo
+           If not LookupName(UserHolder, JumpToUserRec) then
+              if trim(UserHolder) <> "" then
+                  locate 10,15 : print "@1F@";chr(218);string(47,196);chr(191)
+                  locate 11,15 : Print "@1F@";chr(179);string(47,32);chr(179);"@00@ "
+                  locate 12,15 : Print "@1F@";chr(179);"@1C@  Error @18@: @1F@User was not found in the database.";string(2,32);chr(179);"@00@ "
+                  locate 13,15 : Print "@1F@";chr(179);string(47,32);chr(179);"@00@ "
+                  locate 14,15 : print "@1F@";chr(192);"@10@";string(47,196);chr(217);"@00@ "
+                  locate 15,16 : print "@10@";string(49,223)
+                  do while ReadKey(100) = 0
+                  Loop
+                  RefreshScreen
+                  Light(row, column, TRUE)
+               else
+                  RefreshScreen
+                  Light(row, column, TRUE)
+               end if
+           else
+              dim FindUserOnline as integer = 1
+              dim UserFoundOnNode as byte = 0
+              do while FindUserOnline <= count
+                 dim Findnc as TNodeConfig
+                 dim FindUser as TUser
+                 GetNodeConfig(FindUserOnline, Findnc)
+                dim Findni as TNodeInfo
+                GetNodeInfo(FindUserOnline, Findni)
+                if ucase(Findni.User.Name) = ucase(trim(UserHolder)) then 
+                   UserFoundOnNode = FindUserOnline
+                   exit do
+                end if
+                 inc(FindUserOnline)
+              loop
+              if UserFoundOnNode = 0 then
+                 locate 10,15 : print "@1F@";chr(218);string(47,196);chr(191)
+                 locate 11,15 : Print "@1F@";chr(179);"@1F@           User was not found online.";string(10,32);chr(179);"@00@ "
+                 if GetUserByName(UserHolder, FindUser, 0) then
+                    SubText(1) = DateString(FindUser.LastCall)
+                    select case FindUser.Sex
+                       case 1
+                          locate 12,15 : Print "@1F@";chr(179);"@1F@           His last call was on @SUB1:15@";chr(179);"@00@ "
+                       case 2
+                          locate 12,15 : Print "@1F@";chr(179);"@1F@           Her last call was on @SUB1:15@";chr(179);"@00@ "
+                       case else
+                          locate 12,15 : Print "@1F@";chr(179);"@1F@         Their last call was on @SUB1:15@";chr(179);"@00@ "
+                    end select
+                 else
+                    locate 12,15 : Print "@1F@";chr(179);string(47,32);chr(179);"@00@ "
+                 end if
+                 locate 13,15 : Print "@1F@";chr(179);string(47,32);chr(179);"@00@ "                 
+                 locate 14,15 : print "@1F@";chr(192);"@10@";string(47,196);chr(217);"@00@ "
+                 locate 15,16 : print "@10@";string(49,223)
+                 do while ReadKey(100) = 0
+                 Loop
+                 RefreshScreen
+                 Light(row, column, TRUE)
+              else
+                 HilightedNode = UserFoundOnNode
+                 PageNumber = int(HilightedNode / 11) + 1
+                 BottomNode = (PageNumber * 10) - 9
+                 TopNode = (PageNumber * 10)
+                 If TopNode > Count then TopNode = Count
+                 row = HilightedNode mod 10 + 8 
+                 RefreshScreen
+                 Light(row, column, TRUE)
+              end if
+           end if
+        
+        case asc("!")
+           color 0,0
+           cls
+           print " @1F@";chr(218);string(76,196);chr(191)
+           Print "@00@ @1F@";chr(179);"                     Who's Online At @1B@@SYSTEM.BBSNAME:39@@10@";chr(179);"@00@ "
+           Print "@00@ @1F@";chr(179);"             @17@PS-OnLine 3.0 @1F@(c) 1999 Mike Christensen All Rights Reserved    @10@";chr(179);"@00@ "
+           print " @1F@";chr(192);"@10@";string(76,196);chr(217);"@0F@"
+           print
+           if UsersOnline = 0 then
+              Print "  @0F@There are no users currently online.@0F@"
+           else
+              DoBasicList
+              'Print "  @0F@List Of All Users Online @08@: @0F@"
+              'Print
+   
+              'dim ListUsersOnline as integer = 1
+              'dim Listnc as TNodeConfig
+              'dim ListUser as TUser
+              'dim PageCounter as byte = 0
+              
+              'do while ListUsersOnline <= count
+              '   if PageCounter =  13 then
+              '      PageCounter = 1
+              '      Print
+              '      Print "  ";
+              '      Pause
+              '      Cls
+              '      color 0,0
+              '      cls
+              '      print " @1F@";chr(218);string(76,196);chr(191)
+              '      Print "@00@ @1F@";chr(179);"                     Who's Online At @1B@@SYSTEM.BBSNAME:39@@10@";chr(179);"@00@ "
+              '      Print "@00@ @1F@";chr(179);"             @17@PS-OnLine 3.0 @1F@(c) 1999 Mike Christensen All Rights Reserved    @10@";chr(179);"@00@ "
+              '      print " @1F@";chr(192);"@10@";string(76,196);chr(217);"@0F@"
+              '      print
+              '      Print "  @0F@List Of All Users Online @08@: @0F@"
+              '      Print
+              '   end if
+              '   GetNodeConfig(ListUsersOnline, Listnc)
+              '  dim Listni as TNodeInfo
+              '  GetNodeInfo(ListUsersOnline, Listni)
+              '  GetUserById(Listni.User.Id, ListUser, 0)
+              '  if ucase(Listni.User.Name) <> "" then 
+              '     Print "  @N@Node @0F@";ListUsersOnline;" @08@: @0B@";UpperLower(Listni.User.Name);" @N@From @0F@";Listuser.From
+              '     inc(PageCounter)
+              '  end if
+              '   inc(ListUsersOnline)
+              'loop
+           end if
+           Print
+           Print "  ";
+           Pause
+           RefreshScreen
+           Light(row, column, TRUE)
+           
+    end select
+    
+  if cf.RealTime then NeedToUpdate
+loop
+  
+Cls
+          
+If NOT regged then
+   print "@0F@Thank you for using PS-OnLine 3.0 By Mike Christensen"
+   print "(c) 1999 All Rights Reserved"
+   print
+   Print
+   Print "@04@UNREGISTERED EVALUATION COPY..."
+   Print "@07@Five second delay, please help your sysop register this $10 program."
+   Delay 5
+end if
+
+
