@@ -1,0 +1,174 @@
+sub ProcessChannelMessage(cmsg as TChannelMessage)
+
+  select case cmsg.UserData
+    case SP_USER_PAGE
+      dim pmsg as TPageMessage absolute cmsg.Data
+      print
+      print chr(7)
+      SubText(1) = pmsg.From
+      if pmsg.InviteToChat then
+        print [PageFromInviteToChat "@F@@SUB1@@N@ is inviting you to join chat:"]
+      else
+        print [PageFrom "@N@Page from @F@@SUB1@@N@:"]
+      end if
+      dim i as integer
+      for i = 1 to 3
+        if pmsg.Message(i) <> "" then
+          print pmsg.Message(i)
+        end if
+      next
+      print
+    case SP_NEW_MESSAGE
+      dim nmsg as TSystemPageNewMessage absolute cmsg.Data
+      print
+      print chr(7)
+      SubText(1) = nmsg.From.Name
+      print [PageNewMessage1 "@F@@SUB1@@N@ has just written you a new message."]
+      SubText(1) = str(nmsg.Conference)
+      SubText(2) = nmsg.ConferenceName
+      print [PageNewMessage2 "@N@Conference: @SUBNUM1@ (@SUB2@)"]
+      SubText(1) = nmsg.Subject
+      print [PageNewMessage3 "@N@   Subject: @SUB1@"]
+      print
+    case SP_ALT_NUMBER_FILE
+      dim n as integer absolute cmsg.Data
+      if Exists("wc:\disp\alt"+str(n)+".bbs") then
+        print
+        print
+        DisplayFile("alt"+str(n))
+        print
+      end if
+  end select
+end sub
+
+function Pause
+   dim WhichPrompt as byte = int(rnd(-1 * timer) * 3) + 1
+   
+   select case WhichPrompt
+      case 1
+         print "@0B@[P@03@ress @0B@A@03@ny @0B@K@03@ey @0B@T@03@o @0B@C@03@ontinue@0B@]";
+      case 2
+         print "@0F@[P@07@ress @0F@A@07@ny @0F@K@07@ey @0F@T@07@o @0F@C@07@ontinue@0F@]";
+      case else
+         print "@09@[P@01@ress @09@A@01@ny @09@K@01@ey @09@T@01@o @09@C@01@ontinue@09@]";
+   end select
+   
+   do while chr(ReadKey(100)) = "" : loop
+end function
+
+function AskYesNo(PromptString as string, DefValue as boolean) as boolean
+   dim TempAnswer as string * 1
+   dim DefaultAnswer as byte = 0
+   dim XCord as byte
+
+   print PromptString;
+   
+   if DefValue then
+      print " @03@(@0F@Y@08@/@07@n@03@) @08@: ";
+   else
+      print " @03@(@07@y@08@/@0F@N@03@) @08@: ";
+   end if
+   
+   XCord = pos
+
+   do
+      do
+         TempAnswer = chr(ReadKey(100))
+      loop until TempAnswer <> ""
+   
+      if ucase(TempAnswer) = "Y" then
+         if DefaultAnswer > 0 then locate CsrLin, XCord
+         Print "@0F@Y@07@es";
+         if user.HotKeys then
+            AskYesNo = TRUE
+            exit do
+         else
+            DefaultAnswer = 1
+         end if
+      elseif ucase(TempAnswer) = "N" then
+         if DefaultAnswer > 0 then locate CsrLin, XCord
+         Print "@0F@N@07@o ";chr(8);
+         if user.HotKeys then
+            AskYesNo = FALSE
+            exit do
+         else
+            DefaultAnswer = 2
+         end if
+      elseif TempAnswer = chr(13) then
+         if user.HotKeys then
+            if DefValue then
+               Print "@0F@Y@07@es";
+               AskYesNo = TRUE
+               exit do
+            else
+               Print "@0F@N@07@o";
+               AskYesNo = FALSE
+               exit do
+            end if
+         else
+            if DefaultAnswer > 0 then
+               select case DefaultAnswer
+                  case 1
+                     AskYesNo = TRUE
+                     exit do
+                  case else
+                     AskYesNo = FALSE
+                     exit do
+               end select
+            end if
+         end if
+      end if
+   loop
+   Sleep(100)
+end function
+
+function Ordinal(ToConvert as string) as string
+   select case val(Right(ToConvert,2))
+      case 1
+         Ordinal = "st"
+      case 2
+         Ordinal = "nd"      
+      case 3
+         Ordinal = "rd"      
+      case 4 to 19
+         Ordinal = "th"
+      case 20 to 99
+         If len(ToConvert) >= 2 and val(Right(ToConvert,1)) = 0 then Ordinal = "th"
+         If len(ToConvert) >= 2 and val(Right(ToConvert,1)) = 1 then Ordinal = "st"
+         If len(ToConvert) >= 2 and val(Right(ToConvert,1)) = 2 then Ordinal = "nd"      
+         If len(ToConvert) >= 2 and val(Right(ToConvert,1)) = 3 then Ordinal = "rd"      
+         If len(ToConvert) >= 2 and val(Right(ToConvert,1)) >= 4 then Ordinal = "th"      
+      case 0
+         Ordinal = "th"
+   end select
+end function
+
+function UpperLower(byval s as string) as string
+  dim t as string
+  dim i as integer = 1
+  do
+    dim w as string = ExtractWord(s, i)
+    if w = "" then exit do
+    if i > 1 then
+      t = t + " "
+    end if
+    t = t + ucase(w(1))+lcase(mid(w, 2))
+    inc(i)
+  loop
+  UpperLower = t
+end function
+
+function DispYesNo(TStr as boolean) as string
+   If TStr then DispYesNo = "@0F@Yes" else DispYesNo = "@07@No"
+end function
+
+function Bar (LengthOfBar as integer, CharOfBar as integer, BarColor as byte) as string
+   if CharOfBar = 0 then CharOfBar = 196
+   color BarColor
+   Bar = string(LengthOfBar, chr(CharOfBar))
+   if CharOfBar = 196 then mid(Bar, 5, 8) = string(8, chr(205))
+end function
+
+function CenterText(StringToCenter as string) as string
+   CenterText = string(40 - (len(StringToCenter) / 2), 32) + StringToCenter
+end function
