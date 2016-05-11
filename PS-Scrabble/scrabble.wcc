@@ -813,33 +813,35 @@ function DoAutoUpdate as boolean
          PLocate 25, 1 : Print pad("@1F@  Upgrading Game.  Bytes received: 0           (00% Complete)", 84);
          
          dim CodeBasePath as string
-         if trim(cf.CodeBasePath) = "" then
-            dim k as integer
-            if RegOpenKeyEx(0x80000002, "SOFTWARE\MSI\Wildcat", 0, KEY_READ, @k) = ERROR_SUCCESS then
-               dim value as string * 255
-               dim n as integer = sizeof(value)
-               dim vtype as integer
-               if RegQueryValueEx(k, "ServerDirectory", 0, @vtype, @value, @n) = ERROR_SUCCESS then
-                  CodeBasePath = value
-               end if
-               RegCloseKey(k)
-            end if
+//         if trim(cf.CodeBasePath) = "" then
+//            dim k as integer
+//            if RegOpenKeyEx(0x80000002, "SOFTWARE\MSI\Wildcat", 0, KEY_READ, @k) = ERROR_SUCCESS then
+//               dim value as string * 255
+//               dim n as integer = sizeof(value)
+//               dim vtype as integer
+//               if RegQueryValueEx(k, "ServerDirectory", 0, @vtype, @value, @n) = ERROR_SUCCESS then
+//                  CodeBasePath = value
+//               end if
+//               RegCloseKey(k)
+//            end if
             
-            if trim(CodeBasePath) = "" then
-               CodeBasePath = "c:\wc5\scrabble.wcx"
-            else
-               CodeBasePath = CodeBasePath + "\scrabble.wcx"
-            end if
-         else
-            CodeBasePath = cf.CodeBasePath
-         end if
+            // modified by Robert Wolfe (robert.wolfe@winserver.org)
+            CodeBasePath = "wc:\code\"     
+//            if trim(CodeBasePath) = "" then
+//               CodeBasePath = "c:\wc5\scrabble.wcx"
+//            else
+//               CodeBasePath = CodeBasePath + "\scrabble.wcx"
+//            end if
+//         else
+//            CodeBasePath = cf.CodeBasePath
+//         end if
          
-         if trim(cf.BackupCodeBaseFile) <> "" then
-            if Exists(cf.BackupCodeBaseFile) then kill cf.BackupCodeBaseFile 'Remove old backup file
-            name CodeBasePath as cf.BackupCodeBaseFile 'Create new backup file (If errors, we'll abort AutoUpdate)
-         else
-            kill CodeBasePath
-         end if
+//         if trim(cf.BackupCodeBaseFile) <> "" then
+//            if Exists(cf.BackupCodeBaseFile) then kill cf.BackupCodeBaseFile 'Remove old backup file
+//            name CodeBasePath as cf.BackupCodeBaseFile 'Create new backup file (If errors, we'll abort AutoUpdate)
+//         else
+//            kill CodeBasePath
+//         end if
          
          dim FileStream as integer = open CodeBasePath for binary
          dim BytesRecv as integer = 0
@@ -919,7 +921,8 @@ function NotifyPlayerOfTurn(whichUser as integer, WhichGame as TGame) as boolean
    count = GetNodeCount
    dim n as integer = 1
    do while n <= count
-      dim ni as TNodeInfo
+      // TNodeInfo is deprecated.  (robert.wolfe@robertwolfe.org)
+      dim ni as TwcNodeInfo
       GetNodeInfo(n, ni)
       if ni.user.id = whichUser then
          dim pmsg as TPageMessage
@@ -4957,7 +4960,7 @@ function InitMultinode
       do while not eof(GetNodeFile)
          get #GetNodeFile, CheckForDupe, DupeCheckRec
          if DupeCheckRec.WhichPlayer.id = user.info.id and GetNode <> DupeCheckRec.NodeIndex then
-            dim CheckGhostNode as TNodeInfo
+            dim CheckGhostNode as TwcNodeInfo
             GetNodeInfo(DupeCheckRec.NodeIndex, CheckGhostNode)
             if CheckGhostNode.NodeStatus > 2 then
                cls
@@ -7507,7 +7510,7 @@ function SendChatMsg(GamePlay as TGame, GameChannel as integer, UseMomentum as b
          dim WhichUserToPage as string
          WhichUserToPage = PageAnotherNode
          if trim(WhichUserToPage) <> "" then
-            dim ni as TNodeInfo
+            dim ni as TwcNodeInfo
             if not GetNodeInfoByName(WhichUserToPage, ni) then
                ClearHelpWindow
                UpdateMsgBuffer("@0F@That user is no longer online...")
@@ -9901,84 +9904,84 @@ function AutoUpdateSettings
             PLocate 17, 1 : print string(80, 32);
             PLocate 18, 1 : print string(80, 32);
             
-            PLocate 16, 1
-            if AskYesNo("Do you wish to test AutoDetect?",true) then
-            dim k as integer
-               if RegOpenKeyEx(0x80000002, "SOFTWARE\MSI\Wildcat", 0, KEY_READ, @k) = ERROR_SUCCESS then
-                  dim value as string * 255
-                  dim n as integer = sizeof(value)
-                  dim vtype as integer
-                  RegQueryValueEx(k, "ServerDirectory", 0, @vtype, @value, @n)
-                  RegCloseKey(k)
-                  PLocate 17, 1
-                  if trim(value)="" then
-                     print "@0C@FAILED@08@: @07@Failed to open key"
-                     print "@07@Please verify key value HKEY_LOCAL_MACHINE\SOFTWARE\MSI\Wildcat\ServerDirectory"
-                     print "is defined in your registry."
-                  else
-                     print "@07@Registry reports ServerDirectory as ";value
-                     if Exists(value + "\SCRABBLE.WCX") then
-                        print "@0F@SUCCESS! PSScrabble CodeBase Found At ";value + "\SCRABBLE.WCX"
-                     else
-                        print "@0C@FAILED@08@: @07@PSScrabble CodeBase Not Found At ";value + "\SCRABBLE.WCX"
-                     end if
-                  end if
-                  Pause
-                  
-               else
-                  PLocate 17, 1
-                  print "@0C@FAILED@08@: @07@Failed on RegOpenKeyEx()"
-                  print "@07@Please verify key value HKEY_LOCAL_MACHINE\SOFTWARE\MSI\Wildcat\ServerDirectory"
-                  print "is defined in your registry."
-                  Pause
-               end if
-            end if
-            ClearHelpWindow
-            WriteConfig
-         case "2"
-            PLocate 16, 1
-            print "@0F@Note@08@: @07@Use exact paths or UNC paths@08@, @0F@DO NOT@07@ use wc:\";
-            do
-               PLocate 5, 36
-               SetInitialString(cf.BackupCodeBaseFile)
-               cf.BackupCodeBaseFile = InputString(40)
-               
-               PLocate 16, 1
-               print string(80, 32);
-               
-               if trim(cf.BackupCodeBaseFile) = "" then
-                  PLocate 16, 1
-                  print "@0C@Warning@04@: @0F@Without a backup path@07@,@0F@ if an AutoUpdate fails@07@,@0F@ SCRABBLE@07@.@0F@WCX will"
-                  print "         be lost@07@!  ";
-                  if AskYesNo("@0C@Do you wish to continue@04@?", false) then
-                     PLocate 16, 1 : print string(80, 32);
-                     PLocate 17, 1 : print string(80, 32);
-                     exit do
-                  else
-                     PLocate 16, 1 : print string(80, 32);
-                     PLocate 17, 1 : print string(80, 32);
-                  end if
-               else
-                  exit do
-               end if
-            loop
-            WriteConfig
-         case "3"
-            inc(cf.NotifySysopOfUpgrades)
-            if cf.NotifySysopOfUpgrades > 3 then cf.NotifySysopOfUpgrades = 1
-            WriteConfig
-         case "4"
-            inc(cf.VersionCheckFreq)
-            if cf.VersionCheckFreq > 5 then cf.VersionCheckFreq = 1
-            WriteConfig
-         case "5"
-            inc(cf.ShowUpgradeProgress)
-            if cf.ShowUpgradeProgress > 4 then cf.ShowUpgradeProgress = 1
-            WriteConfig
-         case "!"
-            DoAutoUpdate
-         case "H", "?"
-            HelpSection(SYSOPHELP_AUTOUPDATECONFIG)
+//            PLocate 16, 1
+//            if AskYesNo("Do you wish to test AutoDetect?",true) then
+//            dim k as integer
+//              if RegOpenKeyEx(0x80000002, "SOFTWARE\MSI\Wildcat", 0, KEY_READ, @k) = ERROR_SUCCESS then
+//                  dim value as string * 255
+//                  dim n as integer = sizeof(value)
+//                  dim vtype as integer
+//                  RegQueryValueEx(k, "ServerDirectory", 0, @vtype, @value, @n)
+//                  RegCloseKey(k)
+//                  PLocate 17, 1
+//                  if trim(value)="" then
+//                     print "@0C@FAILED@08@: @07@Failed to open key"
+//                     print "@07@Please verify key value HKEY_LOCAL_MACHINE\SOFTWARE\MSI\Wildcat\ServerDirectory"
+//                     print "is defined in your registry."
+//                  else
+//                     print "@07@Registry reports ServerDirectory as ";value
+//                     if Exists(value + "\SCRABBLE.WCX") then
+//                        print "@0F@SUCCESS! PSScrabble CodeBase Found At ";value + "\SCRABBLE.WCX"
+//                    else
+//                        print "@0C@FAILED@08@: @07@PSScrabble CodeBase Not Found At ";value + "\SCRABBLE.WCX"
+//                     end if
+//                  end if
+//                  Pause
+//                  
+//               else
+//                  PLocate 17, 1
+//                  print "@0C@FAILED@08@: @07@Failed on RegOpenKeyEx()"
+//                  print "@07@Please verify key value HKEY_LOCAL_MACHINE\SOFTWARE\MSI\Wildcat\ServerDirectory"
+//                  print "is defined in your registry."
+//                  Pause
+//               end if
+//            end if
+//            ClearHelpWindow
+//            WriteConfig
+//         case "2"
+//            PLocate 16, 1
+//            print "@0F@Note@08@: @07@Use exact paths or UNC paths@08@, @0F@DO NOT@07@ use wc:\";
+//            do
+//               PLocate 5, 36
+//               SetInitialString(cf.BackupCodeBaseFile)
+//              cf.BackupCodeBaseFile = InputString(40)
+//               
+//               PLocate 16, 1
+//               print string(80, 32);
+//               
+//               if trim(cf.BackupCodeBaseFile) = "" then
+//                  PLocate 16, 1
+//                  print "@0C@Warning@04@: @0F@Without a backup path@07@,@0F@ if an AutoUpdate fails@07@,@0F@ SCRABBLE@07@.@0F@WCX will"
+//                  print "         be lost@07@!  ";
+//                  if AskYesNo("@0C@Do you wish to continue@04@?", false) then
+//                     PLocate 16, 1 : print string(80, 32);
+//                     PLocate 17, 1 : print string(80, 32);
+//                     exit do
+//                  else
+//                     PLocate 16, 1 : print string(80, 32);
+//                     PLocate 17, 1 : print string(80, 32);
+//                  end if
+//               else
+//                  exit do
+ //              end if
+//            loop
+//            WriteConfig
+//         case "3"
+//            inc(cf.NotifySysopOfUpgrades)
+//            if cf.NotifySysopOfUpgrades > 3 then cf.NotifySysopOfUpgrades = 1
+ //           WriteConfig
+//         case "4"
+//            inc(cf.VersionCheckFreq)
+//            if cf.VersionCheckFreq > 5 then cf.VersionCheckFreq = 1
+//            WriteConfig
+//         case "5"
+//            inc(cf.ShowUpgradeProgress)
+//            if cf.ShowUpgradeProgress > 4 then cf.ShowUpgradeProgress = 1
+//            WriteConfig
+ //        case "!"
+//            DoAutoUpdate
+//         case "H", "?"
+//            HelpSection(SYSOPHELP_AUTOUPDATECONFIG)
       end select
    loop
 end function
@@ -10085,7 +10088,7 @@ function PageAnotherNode as string
     dim row as byte
     dim col as byte
     dim nc as TNodeConfig
-    dim ni as TNodeInfo
+    dim ni as TwcNodeInfo
     
     col0 = (POS - 1)
 
@@ -10677,7 +10680,7 @@ function OnlinePage
    dim WhichUserToPage as string
    WhichUserToPage = PageAnotherNode
    if trim(WhichUserToPage) <> "" then
-      dim ni as TNodeInfo
+      dim ni as TwcNodeInfo
       if not GetNodeInfoByName(WhichUserToPage, ni) then
          ClearHelpWindow
          PLocate 20,1
