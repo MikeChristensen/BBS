@@ -1,0 +1,2212 @@
+'To Do
+'  Check all stuff/Bug checks/Background image in HTML output, put it in docs
+
+//Next Version
+//  DHTML
+//  BBS List Mods
+//  Entries expiration, email user to update
+//  User preferences (List mode, expert, etc)
+
+#include "util.wch"
+#include "protutil.wch"
+#include "cmdline.wch"
+#include "dispfile.wch"
+#include "timeutil.wch"
+#include "pagemsg.wch"
+#include "windows.wch"
+
+declare function GetSubscriptionType as byte
+declare function EditSubscriptionType(DefaultChoice as byte) as byte
+dim msg as TChannelMessage
+
+type TConfigFile
+   AllowAdd as boolean
+   AllowDelete as boolean
+   AllowEdit as boolean
+   AllowDownload as boolean
+   MaxRecords as integer
+   MaxRecPerUser as integer
+   WhoOnline as string * 50
+   WhoOnlineParam as string * 50
+   LastUser as string * 50
+   RegCode as string * 255
+   TimesRun as integer
+   OutputAnsi as string * 50
+   OutputHTML as string * 50
+end type
+
+type ListDatabase
+   RecordID     as integer
+   PostedBy     as string * 30
+   BBSName      as string * 60
+   SysopName    as string * 25
+   City         as string * 60
+   State        as string * 3
+   NumOfNodes   as string * 4
+   Subscription as byte
+   StorageSpace as string * 7
+   TypeOfModem  as string * 60
+   MinConnectRate as string * 6
+   MaxConnectRate as string * 6
+   BBSSoftware  as string * 80
+   PhoneNumber  as string * 15
+   FilesForDownload as boolean
+   Doors        as boolean
+   Echomail      as boolean
+   Netmail      as boolean
+   Adult        as boolean
+   Rip          as boolean
+   GUI          as boolean
+   CdRom        as boolean
+   CDDesc1      as string * 80
+   Internet     as boolean
+   TelnetAddr   as string * 60
+   FTPAddr      as string * 60
+   WebAddress as string * 60
+   PPP          as boolean
+   TelnetOut       as boolean
+   FTPOut       as boolean
+   UUCP      as boolean
+   IRC as boolean
+   Newsgroups   as boolean
+   TypeOfMailer as string * 60
+   Nets(1 TO 3) as string * 60
+end type
+
+dim bbslist as ListDatabase
+dim cf as TConfigFile
+
+function Regged as boolean
+    Regged = TRUE
+end function
+
+sub Pause
+   dim WhichPrompt as byte = int(rnd(-1 * timer) * 3) + 1
+   
+   select case WhichPrompt
+      case 1
+         print "@0B@[P@03@ress @0B@A@03@ny @0B@K@03@ey @0B@T@03@o @0B@C@03@ontinue@0B@]";
+      case 2
+         print "@0F@[P@07@ress @0F@A@07@ny @0F@K@07@ey @0F@T@07@o @0F@C@07@ontinue@0F@]";
+      case else
+         print "@09@[P@01@ress @09@A@01@ny @09@K@01@ey @09@T@01@o @09@C@01@ontinue@09@]";
+   end select
+   
+   do while chr(ReadKey(100)) = "" : loop
+end sub
+
+function AskString(MaxLen as byte) as string
+    dim RetInp as string = ""
+    dim TotalInput as string = ""
+    dim col0 as byte
+    dim row as byte, col as byte
+    
+    col0 = POS
+
+    row = CSRLIN
+    col = POS + 1
+
+    if MaxLen > 0 then
+       if col + MaxLen <= 80 then
+          print "@0F@";chr(17);string(MaxLen, 32);chr(16);"@03@";
+       end if
+    end if
+    do
+        RetInp = chr(ReadKey(100))
+        if RetInp = chr(8) then
+            locate row,col
+            
+            RetInp = ""
+            if (col - 1) > col0 then
+                TotalInput = LEFT(TotalInput, (len(TotalInput) - 1))
+                dec(col)
+                locate row, col
+                print " ";
+            end if
+        end if
+        if RetInp = chr(9) then
+            RetInp = ""
+        end if
+        locate row, col
+        if RetInp <> chr(13) then
+            if len(TotalInput) < MaxLen then
+               if asc(RetInp) > 31 and asc(RetInp) < 127 then
+                  if RetInp <> "" then
+                     print RetInp;
+                     inc(col)
+                     TotalInput = TotalInput + RetInp
+                     RetInp = ""
+                  end if
+               end if
+            end if
+        else
+           exit do
+        end if
+    loop
+    AskString = TotalInput
+    print
+end function
+
+function AskYesNo(PromptString as string, DefValue as boolean) as boolean
+   dim TempAnswer as string * 1
+   dim DefaultAnswer as byte = 0
+   dim XCord as byte
+
+   print PromptString;
+   
+   if DefValue then
+      print " @03@(@0F@Y@08@/@07@n@03@) @08@: ";
+   else
+      print " @03@(@07@y@08@/@0F@N@03@) @08@: ";
+   end if
+   
+   XCord = pos
+
+   do
+      do
+         TempAnswer = chr(ReadKey(100))
+      loop until TempAnswer <> ""
+   
+      if ucase(TempAnswer) = "Y" then
+         if DefaultAnswer > 0 then locate CsrLin, XCord
+         Print "@0F@Y@07@es";
+         if user.HotKeys then
+            AskYesNo = TRUE
+            exit do
+         else
+            DefaultAnswer = 1
+         end if
+      elseif ucase(TempAnswer) = "N" then
+         if DefaultAnswer > 0 then locate CsrLin, XCord
+         Print "@0F@N@07@o ";chr(8);
+         if user.HotKeys then
+            AskYesNo = FALSE
+            exit do
+         else
+            DefaultAnswer = 2
+         end if
+      elseif TempAnswer = chr(13) then
+         if user.HotKeys then
+            if DefValue then
+               Print "@0F@Y@07@es";
+               AskYesNo = TRUE
+               exit do
+            else
+               Print "@0F@N@07@o";
+               AskYesNo = FALSE
+               exit do
+            end if
+         else
+            if DefaultAnswer > 0 then
+               select case DefaultAnswer
+                  case 1
+                     AskYesNo = TRUE
+                     exit do
+                  case else
+                     AskYesNo = FALSE
+                     exit do
+               end select
+            end if
+         end if
+      end if
+   loop
+   Sleep(100)
+   print
+end function
+
+sub ProcessChannelMessage(cmsg as TChannelMessage)
+  select case cmsg.UserData
+    case SP_USER_PAGE
+      dim pmsg as TPageMessage absolute cmsg.Data
+      print
+      print chr(7)
+      SubText(1) = pmsg.From
+      if pmsg.InviteToChat then
+        print [PageFromInviteToChat "@F@@SUB1@@N@ is inviting you to join chat:"]
+      else
+        print [PageFrom "@N@Page from @F@@SUB1@@N@:"]
+      end if
+      dim i as integer
+      for i = 1 to 3
+        if pmsg.Message(i) <> "" then
+          print pmsg.Message(i)
+        end if
+      next
+      print
+    case SP_NEW_MESSAGE
+      dim nmsg as TSystemPageNewMessage absolute cmsg.Data
+      print
+      print chr(7)
+      SubText(1) = nmsg.From.Name
+      print [PageNewMessage1 "@F@@SUB1@@N@ has just written you a new message."]
+      SubText(1) = str(nmsg.Conference)
+      SubText(2) = nmsg.ConferenceName
+      print [PageNewMessage2 "@N@Conference: @SUBNUM1@ (@SUB2@)"]
+      SubText(1) = nmsg.Subject
+      print [PageNewMessage3 "@N@   Subject: @SUB1@"]
+      print
+    case SP_ALT_NUMBER_FILE
+      dim n as integer absolute cmsg.Data
+      if Exists("wc:\disp\alt"+str(n)+".bbs") then
+        print
+        print
+        DisplayFile("alt"+str(n))
+        print
+      end if
+  end select
+end sub
+
+function Ordinal(ToConvert as string) as string
+   select case val(Right(ToConvert,2))
+      case 1
+         Ordinal = "st"
+      case 2
+         Ordinal = "nd"      
+      case 3
+         Ordinal = "rd"      
+      case 4 to 9
+         Ordinal = "th"      
+      case 10 to 99
+         If len(ToConvert) = 2 then Ordinal = "th"
+         If len(ToConvert) > 2 and val(Right(ToConvert,1)) = 0 then Ordinal = "th"
+         If len(ToConvert) > 2 and val(Right(ToConvert,1)) = 1 then Ordinal = "st"
+         If len(ToConvert) > 2 and val(Right(ToConvert,1)) = 2 then Ordinal = "nd"      
+         If len(ToConvert) > 2 and val(Right(ToConvert,1)) = 3 then Ordinal = "rd"      
+         If len(ToConvert) > 2 and val(Right(ToConvert,1)) >= 4 then Ordinal = "th"      
+      case 0
+         Ordinal = "th"
+   end select
+end function
+
+function UpperLower(byval s as string) as string
+  dim t as string
+  dim i as integer = 1
+  do
+    dim w as string = ExtractWord(s, i)
+    if w = "" then exit do
+    if i > 1 then
+      t = t + " "
+    end if
+    t = t + ucase(w(1))+lcase(mid(w, 2))
+    inc(i)
+  loop
+  UpperLower = t
+end function
+
+function DispYesNo(TStr as boolean) as string
+   If TStr then DispYesNo = "@0F@Yes" else DispYesNo = "@07@No"
+end function
+
+function Bar (LengthOfBar as integer, CharOfBar as integer, BarColor as byte) as string
+   if CharOfBar = 0 then CharOfBar = 196
+   color BarColor
+   Bar = string(LengthOfBar, chr(CharOfBar))
+   if CharOfBar = 196 then mid(Bar, 5, 8) = string(8, chr(205))
+end function
+
+function CenterText(StringToCenter as string) as string
+   CenterText = string(40 - (len(StringToCenter) / 2), 32) + StringToCenter
+end function
+
+sub ReadConfig
+   dim ConfigFound as boolean
+   
+   dim i as integer = open "wc:\data\psbbslist.cfg" for random len = len(TConfigFile)
+   get #i, 1, cf
+   if lof(i) > 0 then 
+      ConfigFound = TRUE
+   end if
+   close #i
+   
+   if not ConfigFound then
+      cls
+      Print "@0B@PS-BBSList First Time Setup"
+      print
+      print "@0F@Welcome to PS-BBSList.  A configuration file was not found, therefore"
+      print "we assume this is the first time you have ran this program.  A config file"
+      print "(\wc5\data\psbbslist.cfg) is now being generated using the default values."
+      print "You may change these values by using the Configuration option off the"
+      print "PS-BBSList Sysop Menu.  If you are happy with this program, please consider"
+      print "registering it.  Otherwise, please remove this program after 30 days."
+      print "Thank you."
+      print Bar(35,0,9)
+      print
+      Pause
+    
+      cf.AllowAdd = TRUE
+      cf.AllowDelete = TRUE
+      cf.AllowEdit = TRUE
+      cf.AllowDownload = TRUE
+      cf.MaxRecords = 0
+      cf.MaxRecPerUser = 0
+      cf.WhoOnline = "Who Is Online"
+      cf.WhoOnlineParam = ""
+      cf.LastUser = "No Last User"
+      cf.RegCode = "000000000"
+      cf.TimesRun = 1
+      cf.OutputAnsi = "wc:\Disp\BBSList.BBS"
+      cf.OutputHTML = "c:\wc5\http\public\BBSList.Htm"
+
+      dim k as integer = open "wc:\data\psbbslist.cfg" for random len=len(TConfigFile)
+         put #k, 1, cf
+      close #k
+   end if
+end sub
+
+sub WriteConfig
+   dim i as integer = open "wc:\data\psbbslist.cfg" for random len=len(TConfigFile)
+      put #i, 1, cf
+   close #i
+end sub
+
+sub WriteDB
+   dim f as integer = open "wc:\data\bbslist.dat" for random len=len(ListDatabase)
+      put #f, lof(f) + 1, bbslist
+   close #f
+end sub
+
+sub UpdateDB(RecordToUpdate as integer, BBSListToUpdate as ListDatabase)
+   dim f as integer = open "wc:\data\bbslist.dat" for random len=len(ListDatabase)
+      put #f, RecordToUpdate, BBSListToUpdate
+   close #f
+end sub
+
+function BadAts(CheckBadAts as string) as boolean
+   dim BadWord as string
+   dim TempBadAts as boolean = FALSE
+   dim Row as byte = csrlin
+   
+   if instr(CheckBadAts, "@CLS@") > 0 then TempBadAts = TRUE
+   if instr(CheckBadAts, "@PAUSE@") > 0 then TempBadAts = TRUE
+   if instr(CheckBadAts, "@NOPAUSE@") > 0 then TempBadAts = TRUE
+   if instr(CheckBadAts, "@00@") > 0 then TempBadAts = TRUE
+   if instr(CheckBadAts, "@BELL@") > 0 then TempBadAts = TRUE
+   if instr(CheckBadAts, "@LOGOFF@") > 0 then TempBadAts = TRUE
+   if instr(CheckBadAts, "@NOSTOP@") > 0 then TempBadAts = TRUE
+   if instr(CheckBadAts, "@STOP@") > 0 then TempBadAts = TRUE
+   if instr(CheckBadAts, "@HANGUP@") > 0 then TempBadAts = TRUE
+   
+   if TempBadAts then
+      Print "@0F@At-Codes are not aloud.  Please try again."
+      Pause
+      Print
+      locate Row, 1 : print string(80,32);
+      locate Row + 1, 1 : print string(80,32);
+   end if
+   
+   if not TempBadAts then
+      dim CussFilter as integer = open "wc:\data\BadWords.Dat" for input
+      if CussFilter > 0 then
+         do while not eof(CussFilter)
+            input #CussFilter, BadWord
+            if instr(ucase(CheckBadAts), ucase(trim(BadWord))) > 0 then 
+               TempBadAts = TRUE
+               exit do
+            end if
+         loop
+         
+         close #CussFilter
+      end if
+      if TempBadAts then
+         Print "@0F@Some language you used was inappropriate for this BBS.  Please try again."
+         Pause
+         Print
+         locate Row, 1 : print string(80,32);
+         locate Row + 1, 1 : print string(80,32);
+      end if
+   end if
+   
+   if TempBadAts then
+      BadAts = TRUE
+   else
+      BadAts = FALSE
+   end if
+end function
+
+function CountRecords as integer
+   dim f as integer = open "wc:\data\bbslist.dat" for random len=len(ListDatabase)
+      CountRecords = lof(f)
+   close #f
+end function
+
+function CheckMaxPerUser as boolean
+   if cf.MaxRecPerUser = 0 then
+      CheckMaxPerUser = FALSE
+      exit function
+   end if
+
+   dim f as integer = open "wc:\data\bbslist.dat" for random len=len(ListDatabase)
+   dim SoFar as integer = 0
+   dim CheckRecord as ListDatabase
+   dim Counter as integer
+   
+   if f <= 0 then
+      CheckMaxPerUser = FALSE
+      exit function
+   end if
+      
+   for Counter = 1 to CountRecords
+      get #f, Counter, CheckRecord
+      if CheckRecord.RecordID = user.info.id then inc(SoFar)
+   next
+   
+   if SoFar >= cf.MaxRecPerUser then
+      CheckMaxPerUser = TRUE
+   else
+      CheckMaxPerUser = FALSE
+   end if
+   
+   close #f
+end function
+
+sub DeleteRecord(RecordToDelete as integer)
+   dim ResortArray(CountRecords - 1) as ListDatabase
+   dim ResortCounter as integer
+   dim TempHolder as integer
+   
+   if RecordToDelete <= CountRecords then
+      dim f as integer = open "wc:\data\bbslist.dat" for random len=len(ListDatabase)
+         for ResortCounter = 1 to RecordToDelete - 1
+            get #f, ResortCounter, ResortArray(ResortCounter)
+         next
+         
+         if not eof(f) then
+            for ResortCounter = RecordToDelete + 1 to CountRecords
+               get #f, ResortCounter, ResortArray(ResortCounter - 1)
+            next
+         end if
+      close #f
+      TempHolder = CountRecords - 1
+      kill "wc:\data\bbslist.dat"
+      open "wc:\data\bbslist.dat" for random as #f len=len(ListDatabase)
+         for ResortCounter = 1 to TempHolder
+            put #f, ResortCounter, ResortArray(ResortCounter)
+         next
+      close #f
+   end if
+end sub
+
+sub EditRecord(RecordToEdit as integer)
+   dim RecordStructToEdit as ListDatabase
+   if RecordToEdit <= CountRecords then
+      dim f as integer = open "wc:\data\bbslist.dat" for random len=len(ListDatabase)
+      get #f, RecordToEdit, RecordStructToEdit
+
+      do
+         dim TempBBSName as string
+         locate 5, 16
+         SetInitialString(RecordStructToEdit.BBSName)
+         TempBBSName = InputString(60)
+         if trim(TempBBSName) = "" then exit sub
+         locate 5, 17
+         color 15, 0
+         print string(63, 32);
+         locate 5, 17
+         print TempBBSName
+      loop while BadAts(TempBBSName)
+      RecordStructToEdit.BBSName = TempBBSName
+   
+      do
+         dim TempSysopName as string
+         locate 6, 16
+         SetInitialString(RecordStructToEdit.SysopName)
+         TempSysopName = InputString(25)
+         if trim(TempSysopName) = "" then exit sub
+         locate 6, 17
+         color 15, 0
+         print string(63, 32);
+         locate 6, 17
+         print TempSysopName
+      loop while BadAts(TempSysopName)
+      RecordStructToEdit.SysopName = TempSysopName
+
+      do
+         dim TempPhoneNumber as string
+         locate 7, 16
+         SetInitialString(RecordStructToEdit.PhoneNumber)
+         TempPhoneNumber = InputMask("(999) 999-9999")
+         if trim(TempPhoneNumber) = "" then exit sub
+         locate 7, 17
+         color 15, 0
+         print string(63, 32);
+         locate 7, 17
+         print TempPhoneNumber
+      loop while BadAts(TempPhoneNumber)
+      RecordStructToEdit.PhoneNumber = TempPhoneNumber
+     
+      do
+         dim TempCity as string
+         locate 8, 16
+         SetInitialString(RecordStructToEdit.City)
+         TempCity = InputString(20)
+         locate 8, 17
+         color 15, 0
+         print string(30, chr(32))
+         locate 8, 17
+         print TempCity
+      loop while BadAts(TempCity)
+      RecordStructToEdit.City = TempCity
+     
+      locate 8, 54
+      SetInitialString(RecordStructToEdit.State)
+      RecordStructToEdit.State = InputString(2)
+      locate 8, 55
+      color 15, 0
+      print string(2, 32)
+      locate 8, 55
+      print ucase(RecordStructToEdit.State);"        "
+     
+      locate 9, 16
+      SetInitialString(RecordStructToEdit.NumOfNodes)
+      RecordStructToEdit.NumOfNodes = str(val(InputString(5)))
+      locate 9, 17
+      color 15, 0
+      print string(63, 32);
+      locate 9, 17
+      print RecordStructToEdit.NumOfNodes
+   
+      locate 10, 16
+      RecordStructToEdit.Subscription = EditSubscriptionType(RecordStructToEdit.Subscription)
+      locate 10, 17
+      color 15, 0
+      print string(63, 32);
+      locate 10, 17
+      if RecordStructToEdit.Subscription = 0 then print "Free"
+      if RecordStructToEdit.Subscription = 1 then print "Members Only"
+      if RecordStructToEdit.Subscription = 3 then print "Both"
+   
+      do
+         dim TempStorageSpace as string
+         locate 11, 16
+         SetInitialString(RecordStructToEdit.StorageSpace)
+         TempStorageSpace = InputString(8)
+         locate 11, 17
+         color 15, 0
+         print string(10, chr(32))
+         locate 11, 17
+         print TempStorageSpace
+      loop while BadAts(TempStorageSpace)
+      RecordStructToEdit.StorageSpace = TempStorageSpace
+   
+      do
+         dim TempTypeOfModem as string
+         locate 12, 16
+         SetInitialString(RecordStructToEdit.TypeOfModem)
+         TempTypeOfModem = InputString(60)
+         locate 12, 17
+         color 15, 0
+         print string(63, 32);
+         locate 12, 17
+         print TempTypeOfModem
+      loop while BadAts(TempTypeOfModem)
+      RecordStructToEdit.TypeOfModem = TempTypeOfModem
+   
+      do
+         dim TempMinConnectRate as string
+         locate 14, 27
+         SetInitialString(RecordStructToEdit.MinConnectRate)
+         TempMinConnectRate = InputString(6)
+         locate 14, 28
+         color 15, 0
+         print string(10, 32)
+         locate 14, 28
+         print TempMinConnectRate
+      loop while BadAts(TempMinConnectRate)
+      RecordStructToEdit.MinConnectRate = TempMinConnectRate
+   
+      do
+         dim TempMinMaxConnectRate as string
+         locate 15, 27
+         SetInitialString(RecordStructToEdit.MaxConnectRate)
+         TempMinMaxConnectRate = InputString(6)
+         locate 15, 28
+         color 15, 0
+         print string(10, 32)
+         locate 15, 28
+         print TempMinMaxConnectRate
+      loop while BadAts(TempMinMaxConnectRate)
+      RecordStructToEdit.MaxConnectRate = TempMinMaxConnectRate
+      
+      locate 20, 1
+      if AskYesNo("@03@Do you wish to edit the extended info?",FALSE) then
+         do
+            dim TempBBSSoftware as string
+            color 11, 0
+            cls
+            print CenterText("Software Questions")
+            color 9, 0
+            print string(79, chr(205))
+            print
+            print "@03@What kind of BBS Software do you use and what version? : "
+            locate 5, 1
+            SetInitialString(RecordStructToEdit.BBSSoftware)
+            TempBBSSoftware = InputString(80)
+         loop while BadAts(TempBBSSoftware)
+         RecordStructToEdit.BBSSoftware = TempBBSSoftware
+      
+         color 11, 0
+         cls
+         print CenterText("Yes/No Questions")
+         print "@09@";string(79, chr(205))
+         print
+         print "@03@Please answer @0F@Y@03@ for @0F@Yes @03@or @0F@N @03@for @0F@No@03@."
+         print
+         RecordStructToEdit.FilesForDownload = AskYesNo("@03@Do you have files for download?         @08@: ",RecordStructToEdit.FilesForDownload)
+         RecordStructToEdit.Doors = AskYesNo("@03@Do you offer doors?                     @08@: ",RecordStructToEdit.Doors)
+         RecordStructToEdit.Netmail = AskYesNo("@03@Do you offer Netmail Access to users?   @08@: ",RecordStructToEdit.Netmail)
+         RecordStructToEdit.Adult = AskYesNo("@03@Do you have adult access?               @08@: ",RecordStructToEdit.Adult)
+         RecordStructToEdit.Rip = AskYesNo("@03@Do you have RIP graphics?               @08@: ",RecordStructToEdit.Rip)
+         RecordStructToEdit.Gui = AskYesNo("@03@Do you offer your callers a GUI client? @08@: ",RecordStructToEdit.Gui)
+         RecordStructToEdit.CdRom = AskYesNo("@03@Do you have Cd-Roms online?             @08@: ",RecordStructToEdit.CdRom)
+         RecordStructToEdit.Internet = AskYesNo("@03@Do you offer Internet access?           @08@: ",RecordStructToEdit.Internet)
+         RecordStructToEdit.Echomail = AskYesNo("@03@Do you carry echomail conferences?      @08@: ",RecordStructToEdit.Echomail)
+         
+         do
+            dim TempCDDesc1 as string
+            if RecordStructToEdit.CdRom = TRUE then
+               cls
+               print "@0F@";CenterText("Cd-Roms Online Questions")
+               print "@09@";string(79, chr(205))
+               print
+               print "@03@What Cds do you have available for download?"
+               locate 5, 1
+               SetInitialString(RecordStructToEdit.CDDesc1)
+               TempCDDesc1 = InputString(80)
+            end if
+         loop while BadAts(TempCDDesc1)
+         RecordStructToEdit.CDDesc1 = TempCDDesc1
+         
+         if RecordStructToEdit.Internet = TRUE then
+            cls
+            print "@0F@";CenterText("Internet Questions")
+            print "@09@";string(79, chr(205))
+            print
+            RecordStructToEdit.TelnetOut = AskYesNo("@03@Do you offer telnet outbound access?   @08@: ",RecordStructToEdit.TelnetOut)
+            RecordStructToEdit.FTPOut = AskYesNo("@03@Do you offer FTP outbound access?      @08@: ",RecordStructToEdit.FTPOut)
+            RecordStructToEdit.UUCP = AskYesNo("@03@Do you offer users UUCP private email? @08@: ",RecordStructToEdit.UUCP)
+            RecordStructToEdit.Newsgroups = AskYesNo("@03@Do you carry USENET newsgroups?        @08@: ",RecordStructToEdit.Newsgroups)
+            RecordStructToEdit.PPP = AskYesNo("@03@Do you offer PPP/Slip access           @08@: ",RecordStructToEdit.PPP)
+            RecordStructToEdit.IRC = AskYesNo("@03@Do you offer IRC Chat access?          @08@: ",RecordStructToEdit.IRC)
+           
+            do
+               dim TempTelnetAddr as string
+               print
+               print "@03@What is your Telnet inbound address? @08@: ";
+               locate 11, 39
+               SetInitialString(RecordStructToEdit.TelnetAddr)
+               TempTelnetAddr = InputString(61)
+               locate 11, 40
+               color 15, 0
+               print string(40, 32);
+               locate 11, 40
+               print TempTelnetAddr
+            loop while BadAts(TempTelnetAddr)
+            RecordStructToEdit.TelnetAddr = TempTelnetAddr
+           
+            do
+               dim TempFTPAddr as string
+               color 9, 0
+               print "@03@What is your FTP inbound address?    @08@: ";
+               locate 12, 39
+               SetInitialString(RecordStructToEdit.FTPAddr)
+               TempFTPAddr = InputString(61)
+               locate 12, 40
+               color 15, 0
+               print string(40, 32);
+               locate 12, 40
+               print TempFTPAddr
+            loop while BadAts(TempFTPAddr)
+            RecordStructToEdit.FTPAddr = TempFTPAddr
+           
+            do
+               dim TempWebAddress as string
+               color 9, 0
+               print "@03@What is your BBS web page site URL?  @08@: ";
+               locate 13, 39
+               SetInitialString(RecordStructToEdit.WebAddress)
+               TempWebAddress = InputString(61)
+               locate 13, 40
+               color 15, 0
+               print string(40, 32);
+               locate 13, 40
+               print TempWebAddress
+            loop while BadAts(TempWebAddress)
+            RecordStructToEdit.WebAddress = TempWebAddress
+         end if
+
+         if RecordStructToEdit.Echomail = TRUE then
+            dim TempNets1 as string
+            dim TempNets2 as string
+            dim TempNets3 as string
+            dim TempMailer as string
+                                     
+            cls
+            print "@0F@";CenterText("Echomail Questions")
+            print "@09@";string(79, chr(205))
+            print
+            print "@03@Please enter what nets you belong to and their addresses (3 Lines):"
+            locate 6, 1
+            print string(75, 32)
+            locate 7, 1
+            print string(75, 32)
+            locate 5, 1
+            do
+               SetInitialString(RecordStructToEdit.Nets(1))
+               TempNets1 = InputString(60)
+            loop while BadAts(TempNets1)
+            RecordStructToEdit.Nets(1) = TempNets1
+            locate 6, 1
+            do
+               SetInitialString(RecordStructToEdit.Nets(2))
+               TempNets2 = InputString(60)
+            loop while BadAts(TempNets2)
+            RecordStructToEdit.Nets(2) = TempNets2
+            locate 7, 1
+            do
+               SetInitialString(RecordStructToEdit.Nets(3))
+               TempNets3 = InputString(60)
+            loop while BadAts(TempNets3)
+            RecordStructToEdit.Nets(3) = TempNets3
+            print
+            print "@03@What type of Front End Mailer do you use? :"
+            locate 10, 1
+            do
+               SetInitialString(RecordStructToEdit.TypeOfMailer)
+               TempMailer = InputString(60)
+            loop while BadAts(TempMailer)
+            RecordStructToEdit.TypeOfMailer = TempMailer
+            color 9, 0
+         end if
+         
+
+
+
+      end if
+         
+      close #f
+      UpdateDB(RecordToEdit, RecordStructToEdit)
+   end if
+end sub
+
+function GetSubscriptionType as byte
+   dim SubscriptionType as string * 1
+   
+   print " @0B@S@03@ubscription Only  @0B@F@03@ree To Anyone  @0B@B@03@oth  @08@: @0F@";
+   
+   do while ucase(SubscriptionType) <> "S" and ucase(SubscriptionType) <> "F" and ucase(SubscriptionType) <> "B" and ucase(SubscriptionType) <> CHR(13)
+      SubscriptionType = ""
+      do while SubscriptionType = ""
+         SubscriptionType = chr(ReadKey(100))
+      loop
+   loop
+   
+   if ucase(SubscriptionType) = "F" then GetSubscriptionType = 0
+   if ucase(SubscriptionType) = "S" then GetSubscriptionType = 1
+   if ucase(SubscriptionType) = "B" then GetSubscriptionType = 3
+   if ucase(SubscriptionType) = CHR(13) then GetSubscriptionType = 0
+end function
+
+function EditSubscriptionType(DefaultChoice as byte) as byte
+   dim SubscriptionType as string * 1
+   
+   locate 10, 17
+   print "@0B@S@03@ubscription Only  @0B@F@03@ree To Anyone  @0B@B@03@oth  @08@: @0F@";
+   
+   do while ucase(SubscriptionType) <> "S" and ucase(SubscriptionType) <> "F" and ucase(SubscriptionType) <> "B" and ucase(SubscriptionType) <> CHR(13)
+      SubscriptionType = ""
+      do while SubscriptionType = ""
+         SubscriptionType = chr(ReadKey(100))
+      loop
+   loop
+   
+   if ucase(SubscriptionType) = "F" then EditSubscriptionType = 0
+   if ucase(SubscriptionType) = "S" then EditSubscriptionType = 1
+   if ucase(SubscriptionType) = "B" then EditSubscriptionType = 3
+   if ucase(SubscriptionType) = CHR(13) then EditSubscriptionType = DefaultChoice
+end function
+
+sub AddBBSEntry
+   BBSList.RecordID = user.info.id
+   BBSList.PostedBy = user.info.name
+
+   cls
+   print "@0F@";CenterText("Add BBS Entry To List")
+   color 9, 0
+   print string(79, chr(205))
+   print
+   color 9, 0
+   print "BBS Name      : "
+   print "SysOp Name    : "
+   print "Phone Number  : "
+   print "City          :                                 State : "
+   print "# Of Nodes    : "
+   print "Subscription  : "
+   print "Storage Space : "
+   print "Modem(s)      : "
+   print
+   print "Minimum Connection Speed : "
+   print "Maximum Connection Speed : "
+  
+   do
+      dim TempBBSName as string = ""
+      locate 4, 16
+      TempBBSName = InputString(60)
+      if trim(TempBBSName) = "" then exit sub
+      locate 4, 17
+      color 15, 0
+      print string(63, 32);
+      locate 4, 17
+      print TempBBSName
+      locate 16, 1
+   loop while BadAts(TempBBSName)
+   BBSList.BBSName = TempBBSName
+
+   do
+      dim TempSysopName as string
+      locate 5, 16
+      SetInitialString(UpperLower(user.info.name))
+      TempSysopName = InputString(25)
+      if trim(TempSysopName) = "" then exit sub
+      locate 5, 17
+      color 15, 0
+      print string(63, 32);
+      locate 5, 17
+      print TempSysopName
+      locate 16, 1
+   loop while BadAts(TempSysopName)
+   BBSList.SysopName = TempSysopName
+
+   do
+      dim TempPhoneNumber as string
+      locate 6, 16
+      if trim(user.profile("DataNumber")) = "" then
+         TempPhoneNumber = InputMask("(999) 999-9999")
+      else
+         SetInitialString(user.profile("DataNumber"))
+         TempPhoneNumber = InputString(15)
+      end if
+      if trim(TempPhoneNumber) = "" then exit sub
+      locate 6, 17
+      color 15, 0
+      print string(63, 32);
+      locate 6, 17
+      print TempPhoneNumber
+      locate 16, 1
+   loop while BadAts(TempPhoneNumber)
+   BBSList.PhoneNumber = TempPhoneNumber
+  
+   do
+      dim TempCity as string
+      locate 7, 16
+      SetInitialString(user.city)
+      TempCity = InputString(20)
+      locate 7, 17
+      color 15, 0
+      print string(30, chr(32))
+      locate 7, 17
+      print TempCity
+      locate 16, 1
+   loop while BadAts(TempCity)
+   BBSList.City = TempCity
+  
+   locate 7, 56
+   SetInitialString(user.state)
+   BBSList.State = InputString(2)
+   locate 7, 57
+   color 15, 0
+   print string(2, 32)
+   locate 7, 57
+   print ucase(BBSList.State);"        "
+  
+   locate 8, 16
+   BBSList.NumOfNodes = str(val(InputString(5)))
+   locate 8, 17
+   color 15, 0
+   print string(63, 32);
+   locate 8, 17
+   print BBSList.NumOfNodes
+
+   locate 9, 16
+   BBSList.Subscription = GetSubscriptionType
+   locate 9, 17
+   color 15, 0
+   print string(63, 32);
+   locate 9, 17
+   if BBSList.Subscription = 0 then print "Free"
+   if BBSList.Subscription = 1 then print "Members Only"
+   if BBSList.Subscription = 3 then print "Both"
+
+   do
+      dim TempStorageSpace as string
+      locate 10, 16
+      TempStorageSpace = InputString(8)
+      locate 10, 17
+      color 15, 0
+      print string(10, chr(32))
+      locate 10, 17
+      print TempStorageSpace
+      locate 16, 1
+   loop while BadAts(TempStorageSpace)
+   BBSList.StorageSpace = TempStorageSpace
+
+   do
+      dim TempTypeOfModem as string
+      locate 11, 16
+      TempTypeOfModem = InputString(60)
+      locate 11, 17
+      color 15, 0
+      print string(63, 32);
+      locate 11, 17
+      print TempTypeOfModem
+      locate 16, 1
+   loop while BadAts(TempTypeOfModem)
+   BBSList.TypeOfModem = TempTypeOfModem
+
+   do
+      dim TempMinConnectRate as string
+      locate 13, 27
+      TempMinConnectRate = InputString(6)
+      locate 13, 28
+      color 15, 0
+      print string(10, 32)
+      locate 13, 28
+      print TempMinConnectRate
+      locate 16, 1
+   loop while BadAts(TempMinConnectRate)
+   BBSList.MinConnectRate = TempMinConnectRate
+
+   do
+      dim TempMaxConnectRate as string
+      locate 14, 27
+      TempMaxConnectRate = InputString(6)
+      locate 14, 28
+      color 15, 0
+      print string(10, 32)
+      locate 14, 28
+      print TempMaxConnectRate
+      locate 16, 1
+   loop while BadAts(TempMaxConnectRate)
+   BBSList.MaxConnectRate = TempMaxConnectRate
+   
+   do
+      dim TempBBSSoftware as string
+      color 11, 0
+      cls
+      print CenterText("Software Questions")
+      color 9, 0
+      print string(79, chr(205))
+      print
+      print "@03@What kind of BBS Software do you use and what version? : "
+      locate 5, 1
+      TempBBSSoftware = InputString(80)
+   loop while BadAts(TempBBSSoftware)
+   BBSList.BBSSoftware = TempBBSSoftware
+
+   color 11, 0
+   cls
+   print CenterText("Yes/No Questions")
+   print "@09@";string(79, chr(205))
+   print
+   print "@03@Please answer @0F@Y@03@ for @0F@Yes @03@or @0F@N @03@for @0F@No@03@."
+   print
+   BBSList.FilesForDownload = AskYesNo("@03@Do you have files for download?         @08@: ",TRUE)
+   BBSList.Doors = AskYesNo("@03@Do you offer doors?                     @08@: ",TRUE)
+   BBSList.Netmail = AskYesNo("@03@Do you offer Netmail Access to users?   @08@: ",TRUE)
+   BBSList.Adult = AskYesNo("@03@Do you have adult access?               @08@: ",TRUE)
+   BBSList.Rip = AskYesNo("@03@Do you have RIP graphics?               @08@: ",TRUE)
+   BBSList.Gui = AskYesNo("@03@Do you offer your callers a GUI client? @08@: ",TRUE)
+   BBSList.CdRom = AskYesNo("@03@Do you have Cd-Roms online?             @08@: ",TRUE)
+   BBSList.Internet = AskYesNo("@03@Do you offer Internet access?           @08@: ",TRUE)
+   BBSList.Echomail = AskYesNo("@03@Do you carry echomail conferences?      @08@: ",TRUE)
+
+   do
+      dim TempCDDesc1 as string
+      if BBSList.CdRom = TRUE then
+         cls
+         print "@0F@";CenterText("Cd-Roms Online Questions")
+         print "@09@";string(79, chr(205))
+         print
+         print "@03@What Cds do you have available for download?"
+         locate 5, 1
+         TempCDDesc1 = InputString(80)
+      end if
+   loop while BadAts(TempCDDesc1)
+   BBSList.cddesc1 = TempCDDesc1
+
+   if BBSList.Internet = TRUE then
+      cls
+      print "@0F@";CenterText("Internet Questions")
+      print "@09@";string(79, chr(205))
+      print
+      BBSList.TelnetOut = AskYesNo("@03@Do you offer telnet outbound access?   @08@: ",TRUE)
+      BBSList.FTPOut = AskYesNo("@03@Do you offer FTP outbound access?      @08@: ",TRUE)
+      BBSList.UUCP = AskYesNo("@03@Do you offer users UUCP private email? @08@: ",TRUE)
+      BBSList.Newsgroups = AskYesNo("@03@Do you carry USENET newsgroups?        @08@: ",TRUE)
+      BBSList.PPP = AskYesNo("@03@Do you offer PPP/Slip access           @08@: ",TRUE)
+      BBSList.IRC = AskYesNo("@03@Do you offer IRC Chat access?          @08@: ",TRUE)
+     
+      do
+         dim TempTelnetAddr as string
+         print
+         print "@03@What is your Telnet inbound address? @08@: ";
+         locate 11, 39
+         TempTelnetAddr = InputString(61)
+         locate 11, 40
+         color 15, 0
+         print string(40, 32);
+         locate 11, 40
+         print TempTelnetAddr
+      loop while BadAts(TempTelnetAddr)
+      BBSList.TelnetAddr = TempTelnetAddr
+     
+      do
+         dim TempFTPAddr as string
+         color 9, 0
+         print "@03@What is your FTP inbound address?    @08@: ";
+         locate 12, 39
+         TempFTPAddr = InputString(61)
+         locate 12, 40
+         color 15, 0
+         print string(40, 32);
+         locate 12, 40
+         print TempFTPAddr
+      loop while BadAts(TempFTPAddr)
+      BBSList.FTPAddr = TempFTPAddr
+     
+      do
+         dim TempWebAddress as string
+         color 9, 0
+         print "@03@What is your BBS web page site URL?  @08@: ";
+         locate 13, 39
+         TempWebAddress = InputString(61)
+         locate 13, 40
+         color 15, 0
+         print string(40, 32);
+         locate 13, 40
+         print TempWebAddress
+      loop while BadAts(TempWebAddress)
+      BBSList.WebAddress = TempWebAddress
+      
+      
+      print
+   end if
+   
+   if BBSList.Echomail = TRUE then
+      dim TempNets1 as string
+      dim TempNets2 as string
+      dim TempNets3 as string
+      dim TempMailer as string
+                               
+      cls
+      print "@0F@";CenterText("Echomail Questions")
+      print "@09@";string(79, chr(205))
+      print
+      print "@03@Please enter what nets you belong to and their addresses (3 Lines):"
+      locate 6, 1
+      print string(75, 32)
+      locate 7, 1
+      print string(75, 32)
+      locate 5, 1
+      do
+         TempNets1 = InputString(60)
+      loop while BadAts(TempNets1)
+      BBSList.Nets(1) = TempNets1
+      locate 6, 1
+      do
+         TempNets2 = InputString(60)
+      loop while BadAts(TempNets2)
+      BBSList.Nets(2) = TempNets2
+      locate 7, 1
+      do
+         TempNets3 = InputString(60)
+      loop while BadAts(TempNets3)
+      BBSList.Nets(3) = TempNets3
+      print
+      print "@03@What type of Front End Mailer do you use? :"
+      locate 10, 1
+      do
+         TempMailer = InputString(60)
+      loop while BadAts(TempMailer)
+      BBSList.TypeOfMailer = TempMailer
+      color 9, 0
+   end if
+   
+   print "@09@";string(79, chr(205))
+   print CenterText("@0F@Thank you for adding your entry!")
+   print "@09@";string(79, chr(205))
+   print
+   WriteDB
+   Pause
+end sub
+
+sub SearchList
+   dim SearchString as string * 60
+   dim RecToSearch as ListDatabase
+   dim RecCounter as integer
+   dim RecFound as boolean
+   dim AnyFound as boolean
+   dim SearchChoice as string * 1
+   dim LastFound as integer
+   
+   RecCounter = 1
+   LastFound = 0
+
+   cls
+   print "@0F@Search BBS List"
+   print Bar(35,0,9)
+   print
+   print "@03@Enter text to search for@08@: @0F@";
+   SearchString = InputString(60)
+   print
+
+   if trim(SearchString) <> "" then
+      open "wc:\data\bbslist.dat" for random as #1  len=len(ListDatabase)
+         Print "@03@Searching @0F@";FormatNumber(lof(1));"@03@ Record";
+         If lof(1) > 1 then 
+            print "s..."
+         else
+            print "..."
+         end if
+         
+         do
+            Get #1, RecCounter, RecToSearch
+            RecFound = FALSE
+
+            if Instr(ucase(RecToSearch.BBSName), ucase(SearchString)) > 0 then RecFound = TRUE
+            if Instr(ucase(RecToSearch.SysopName), ucase(SearchString)) > 0 then RecFound = TRUE
+            if Instr(ucase(RecToSearch.PhoneNumber), ucase(SearchString)) > 0 then RecFound = TRUE
+            if Instr(ucase(RecToSearch.City), ucase(SearchString)) > 0 then RecFound = TRUE
+            if Instr(ucase(RecToSearch.State), ucase(SearchString)) > 0 then RecFound = TRUE
+            if Instr(ucase(RecToSearch.NumOfNodes), ucase(SearchString)) > 0 then RecFound = TRUE
+            if Instr(ucase(RecToSearch.StorageSpace), ucase(SearchString)) > 0 then RecFound = TRUE
+            if Instr(ucase(RecToSearch.TypeOfModem), ucase(SearchString)) > 0 then RecFound = TRUE
+            if Instr(ucase(RecToSearch.MinConnectRate), ucase(SearchString)) > 0 then RecFound = TRUE
+            if Instr(ucase(RecToSearch.MaxConnectRate), ucase(SearchString)) > 0 then RecFound = TRUE
+            
+            if RecFound then
+               AnyFound = TRUE
+               cls
+               print "@0F@";CenterText("Search Results")
+               color 9, 0
+               print string(79, chr(205))
+               print "@03@Record @0F@";RecCounter;"@03@ of @0F@";lof(1);"   @03@Posted By @0F@";UpperLower(RecToSearch.PostedBy)
+               print
+               print "@03@BBS Name      @08@: @0F@";RecToSearch.BBSName
+               print "@03@SysOp Name    @08@: @0F@";RecToSearch.SysopName
+               print "@03@Phone Number  @08@: @0F@";RecToSearch.PhoneNumber
+               print "@03@City          @08@: @0F@";pad(RecToSearch.City, 30);"@03@State @08@: @0F@";RecToSearch.State
+               print "@03@# Of Nodes    @08@: @0F@";RecToSearch.NumOfNodes
+               print "@03@Subscription  @08@: @0F@";
+            
+               if RecToSearch.Subscription = 0 then print "Free"
+               if RecToSearch.Subscription = 1 then print "Members Only"
+               if RecToSearch.Subscription = 3 then print "Both"
+               
+               print "@03@Storage Space @08@: @0F@";RecToSearch.StorageSpace
+               print "@03@Modem(s)      @08@: @0F@";RecToSearch.TypeOfModem
+               print
+               print "@03@Minimum Connection Speed @08@: @0F@";RecToSearch.MinConnectRate
+               print "@03@Maximum Connection Speed @08@: @0F@";RecToSearch.MaxConnectRate
+               
+               print 
+               Print "@03@[@0F@I@03@]nfo, [@0F@?@03@] Help, [@0F@[@03@] Prev, [@0F@]@03@] Next [@0F@Q@03@]uit @08@: @0F@"
+
+               do
+                   SearchChoice = ucase(CHR(readkey(100)))
+                   if SearchChoice <> "" then
+                      exit do
+                   end if
+            
+                 do while ReadChannel(0, msg)
+                    ProcessChannelMessage(msg)
+                 loop
+            
+               loop
+            
+               select case ucase(SearchChoice)
+                  case "Q"
+                     close #1
+                     exit sub
+
+                  case "?"
+                     Cls
+                     DisplayFile "wc:\help\psblhelp.bbs"
+                     print
+                     Pause
+                     
+                  case "]"
+                     LastFound = RecCounter
+                     inc(RecCounter)
+                     if RecCounter > lof(1) then
+                        Cls
+                        print "@0F@End Of Search."
+                        print Bar(35,0,9)
+                        print
+                        Pause
+                        close #1
+                        exit sub
+                     end if
+                     
+                  case "["
+                     If LastFound > 0 then
+                        RecCounter = LastFound
+                     end if
+                     
+                  case chr(13)
+                     LastFound = RecCounter
+                     inc(RecCounter)
+                     if RecCounter > lof(1) then
+                        Cls
+                        print "@0F@End Of Search."
+                        print Bar(35,0,9)
+                        print
+                        Pause
+                        close #1
+                        exit sub
+                     end if
+                     
+                  case "I"
+                    cls
+                    color 11, 0
+                    cls
+                    print CenterText("More Information On " + RecToSearch.BBSName)
+                    color 9, 0
+                    print string(79, chr(205))
+                    print
+                    print "@03@BBS Software       @08@: @0F@";Trim(RecToSearch.BBSSoftware)
+                    print
+                    print "@03@Files For Download @08@: @0F@";DispYesNo(RecToSearch.FilesForDownload)
+                    print "@03@Doors Available    @08@: @0F@";DispYesNo(RecToSearch.Doors)
+                    print "@03@Netmail Support    @08@: @0F@";DispYesNo(RecToSearch.Netmail)
+                    print "@03@Adult Access       @08@: @0F@";DispYesNo(RecToSearch.Adult)
+                    print "@03@RIP Graphics       @08@: @0F@";DispYesNo(RecToSearch.Rip)
+                    print "@03@GUI Terminal       @08@: @0F@";DispYesNo(RecToSearch.Gui)
+                    print "@03@CD-Roms Online     @08@: @0F@";DispYesNo(RecToSearch.CdRom)
+                    print "@03@Internet Access    @08@: @0F@";DispYesNo(RecToSearch.Internet)
+                    print "@03@Echomail Access    @08@: @0F@";DispYesNo(RecToSearch.Echomail)
+                    print
+         
+                    if RecToSearch.CdRom then
+                       print "@03@CDs Online         @08@: @0F@";RecToSearch.cddesc1
+                    end if
+                 
+                    print
+                    Pause
+                 
+                     if RecToSearch.Internet = TRUE then
+                        cls
+                        print "@0F@";CenterText("Internet Information")
+                        print "@09@";string(79, chr(205))
+                        print
+                        print "@03@Telnet Outbound @08@: @0F@";DispYesNo(RecToSearch.TelnetOut)
+                        print "@03@FTP Outbound    @08@: @0F@";DispYesNo(RecToSearch.FTPOut)
+                        print "@03@UUCP E-Mail     @08@: @0F@";DispYesNo(RecToSearch.UUCP)
+                        print "@03@Newsgroups      @08@: @0F@";DispYesNo(RecToSearch.Newsgroups)
+                        print "@03@PPP Server      @08@: @0F@";DispYesNo(RecToSearch.PPP)
+                        print "@03@IRC Access      @08@: @0F@";DispYesNo(RecToSearch.IRC)
+                       
+                        print
+                        print "@03@Telnet Inbound  @08@: @0F@";Trim(RecToSearch.TelnetAddr)
+                        print "@03@FTP Inbound     @08@: @0F@";Trim(RecToSearch.FTPAddr)
+                        print "@03@Web Site        @08@: @0F@";Trim(RecToSearch.WebAddress)
+                     
+                        print
+                        Pause
+                     end if
+                 
+                  if RecToSearch.Echomail then
+                    cls
+                    print "@0F@";CenterText("Echomail Information")
+                    print "@09@";string(79, chr(205))
+                    print
+                    print "@03@Mail Networks And Addresses @08@:@0F@"
+                    if Trim(RecToSearch.Nets(1)) <> "" then print RecToSearch.Nets(1)
+                    if Trim(RecToSearch.Nets(2)) <> "" then print RecToSearch.Nets(2)
+                    if Trim(RecToSearch.Nets(3)) <> "" then print RecToSearch.Nets(3)
+                    print
+                    print "@03@Front End Mailer @08@: @0F@";RecToSearch.TypeOfMailer
+                    Print
+                    Pause
+                  end if
+
+               end select
+            else
+               inc(RecCounter)
+               if eof(1) then 
+                  close #1
+                  Cls
+                  print "@0F@End Of Search."
+                  print Bar(35,0,9)
+                  print
+                  Pause
+                  exit sub
+               end if
+            end if
+         loop
+      close #1
+      
+      Cls
+      
+      If NOT AnyFound then
+         print "@03@No matches found."
+         Pause
+      end if
+   end if
+    
+end sub
+
+sub ViewDetailedList
+   dim BBSListView as ListDatabase
+   dim ViewCounter as integer = 1
+   dim NumOfRecords as integer
+   dim ViewChoice as string * 1
+   dim SpecialAccess as byte = 0
+   dim Direction as boolean = TRUE //True = Forward, False = Reverse
+
+   do 
+      dim f as integer = open "wc:\data\bbslist.dat" for random len=len(ListDatabase)
+         get #f, ViewCounter, BBSListView
+         NumOfRecords = lof(f)
+      close #f
+   
+      cls
+      print "@0F@";CenterText("View BBS List")
+      color 9, 0
+      print string(79, chr(205))
+      print "@03@Record @0F@";ViewCounter;"@03@ of @0F@";NumOfRecords;"   @03@Posted By @0F@";UpperLower(BBSListView.PostedBy)
+      print
+      print "@03@BBS Name      @08@: @0F@";BBSListView.BBSName
+      print "@03@SysOp Name    @08@: @0F@";BBSListView.SysopName
+      print "@03@Phone Number  @08@: @0F@";BBSListView.PhoneNumber
+      print "@03@City          @08@: @0F@";pad(BBSListView.City, 30);"@03@State @08@: @0F@";BBSListView.State
+      print "@03@# Of Nodes    @08@: @0F@";BBSListView.NumOfNodes
+      print "@03@Subscription  @08@: @0F@";
+   
+      if BBSListView.Subscription = 0 then print "Free"
+      if BBSListView.Subscription = 1 then print "Members Only"
+      if BBSListView.Subscription = 3 then print "Both"
+      
+      print "@03@Storage Space @08@: @0F@";BBSListView.StorageSpace
+      print "@03@Modem(s)      @08@: @0F@";BBSListView.TypeOfModem
+      print
+      print "@03@Minimum Connection Speed @08@: @0F@";BBSListView.MinConnectRate
+      print "@03@Maximum Connection Speed @08@: @0F@";BBSListView.MaxConnectRate
+      
+      print 
+      
+      print "@03@[@0F@N@03@]ew Entry, [@0F@I@03@]nfo, [@0F@S@03@]earch, [@0F@?@03@] Help, [@0F@[@03@] Prev, [@0F@]@03@] Next [@0F@Q@03@]uit";
+      if GetObjectFlags(OBJECTID_MASTER_SYSOP) then
+         SpecialAccess = 2
+         Print
+         Print "@03@[@0F@E@03@]dit Entry, @03@[@0F@U@03@]ser Editor, @03@[@0F@D@03@]elete @08@: @0F@";
+      else
+         if ucase(BBSListView.PostedBy) = ucase(user.info.name) then
+            SpecialAccess = 1
+            Print
+            Print "@03@[@0F@E@03@]dit Entry, @03@[@0F@D@03@]elete @08@: @0F@";
+         else
+            SpecialAccess = 0
+         end if
+      end if
+
+      do
+          ViewChoice = ucase(CHR(readkey(100)))
+          if ViewChoice <> "" then
+             exit do
+          end if
+
+        do while ReadChannel(0, msg)
+           ProcessChannelMessage(msg)
+        loop
+
+      loop
+
+      select case ucase(ViewChoice)
+         case "U"
+            if SpecialAccess > 1 then
+               run "Sysop User Editor", str(abs(BBSListView.RecordID))
+            end if
+         case "D"
+            If SpecialAccess > 0 then
+               if GetObjectFlags(OBJECTID_MASTER_SYSOP) or cf.AllowDelete then
+                  print : print
+                  if AskYesNo("@0F@Delete this record?",FALSE) then
+                     DeleteRecord(ViewCounter)
+                     if ViewCounter > CountRecords then ViewCounter = CountRecords
+                  end if
+               end if
+            end if
+         case "?"
+            Cls
+            DisplayFile "wc:\help\psblhelp.bbs"
+            print
+            Pause
+         case "E"
+            If SpecialAccess > 0 then
+               if GetObjectFlags(OBJECTID_MASTER_SYSOP) or cf.AllowEdit then
+                  EditRecord(ViewCounter)
+               end if
+            end if
+         case "S"
+            SearchList
+         case "I"
+           cls
+           color 11, 0
+           cls
+           print CenterText("More Information On " + BBSListView.BBSName)
+           color 9, 0
+           print string(79, chr(205))
+           print
+           print "@03@BBS Software       @08@: @0F@";Trim(BBSListView.BBSSoftware)
+           print
+           print "@03@Files For Download @08@: @0F@";DispYesNo(BBSListView.FilesForDownload)
+           print "@03@Doors Available    @08@: @0F@";DispYesNo(BBSListView.Doors)
+           print "@03@Netmail Support    @08@: @0F@";DispYesNo(BBSListView.Netmail)
+           print "@03@Adult Access       @08@: @0F@";DispYesNo(BBSListView.Adult)
+           print "@03@RIP Graphics       @08@: @0F@";DispYesNo(BBSListView.Rip)
+           print "@03@GUI Terminal       @08@: @0F@";DispYesNo(BBSListView.Gui)
+           print "@03@CD-Roms Online     @08@: @0F@";DispYesNo(BBSListView.CdRom)
+           print "@03@Internet Access    @08@: @0F@";DispYesNo(BBSListView.Internet)
+           print "@03@Echomail Access    @08@: @0F@";DispYesNo(BBSListView.Echomail)
+           print
+
+           if BBSListView.CdRom then
+              print "@03@CDs Online         @08@: @0F@";BBSListView.cddesc1
+           end if
+        
+           print
+           Pause
+        
+            if BBSListView.Internet = TRUE then
+               cls
+               print "@0F@";CenterText("Internet Information")
+               print "@09@";string(79, chr(205))
+               print
+               print "@03@Telnet Outbound @08@: @0F@";DispYesNo(BBSListView.TelnetOut)
+               print "@03@FTP Outbound    @08@: @0F@";DispYesNo(BBSListView.FTPOut)
+               print "@03@UUCP E-Mail     @08@: @0F@";DispYesNo(BBSListView.UUCP)
+               print "@03@Newsgroups      @08@: @0F@";DispYesNo(BBSListView.Newsgroups)
+               print "@03@PPP Server      @08@: @0F@";DispYesNo(BBSListView.PPP)
+               print "@03@IRC Access      @08@: @0F@";DispYesNo(BBSListView.IRC)
+              
+               print
+               print "@03@Telnet Inbound  @08@: @0F@";Trim(BBSListView.TelnetAddr)
+               print "@03@FTP Inbound     @08@: @0F@";Trim(BBSListView.FTPAddr)
+               print "@03@Web Site        @08@: @0F@";Trim(BBSListView.WebAddress)
+            
+               print
+               Pause
+            end if
+        
+         if BBSListView.Echomail = TRUE then
+           cls
+           print "@0F@";CenterText("Echomail Information")
+           print "@09@";string(79, chr(205))
+           print
+           print "@03@Mail Networks And Addresses @08@:@0F@"
+           if Trim(BBSListView.Nets(1)) <> "" then print BBSListView.Nets(1)
+           if Trim(BBSListView.Nets(2)) <> "" then print BBSListView.Nets(2)
+           if Trim(BBSListView.Nets(3)) <> "" then print BBSListView.Nets(3)
+           print
+           print "@03@Front End Mailer @08@: @0F@";BBSListView.TypeOfMailer
+           Print
+           Pause
+         end if
+        
+         case chr(13), "]"
+            if ViewCounter = NumOfRecords then 
+               ViewCounter = 1
+            else
+               inc(ViewCounter)
+               Direction = TRUE
+            end if
+            
+         case "["
+            if ViewCounter = 1 then
+               ViewCounter = NumOfRecords
+            else
+               dec(ViewCounter)
+               Direction = FALSE
+            end if
+            
+         case "N"
+            if GetObjectFlags(OBJECTID_MASTER_SYSOP) or cf.AllowAdd then
+               if CountRecords < cf.MaxRecords or cf.MaxRecords = 0 or GetObjectFlags(OBJECTID_MASTER_SYSOP) then
+                  if not CheckMaxPerUser then
+                     if not Regged and CountRecords >= 8 then
+                        cls
+                        Print "@0B@Unregistered Limitation!"
+                        print Bar(35,0,9)
+                        print
+                        print "@03@This system is running the unregistered version of PS-BBSList, which."
+                        print "will not allow more than 8 entries in the database.  Please convince"
+                        print "you sysop to register.  The cost is only $15."
+                        print
+                        Pause
+                     else
+                        AddBBSEntry
+                     end if
+                  else
+                     cls
+                     Print "@0B@Personal Limit Reached"
+                     print Bar(35,0,9)
+                     print
+                     print "@03@You will have to delete one of your old records before you are allowed"
+                     print "to add another one."
+                     print
+                     Pause
+                  end if
+               else
+                  cls
+                  Print "@0B@No More Records Allowed"
+                  print Bar(35,0,9)
+                  print
+                  print "@03@The maximum number of booths has been reached."
+                  print
+                  Pause
+               end if
+            end if
+            
+         case "Q"
+            exit do
+      end select
+   loop
+end sub
+
+sub ViewShortList
+   dim ShortCounter as integer
+   dim ShortBBSListView as ListDatabase
+   dim PageCounter as byte
+   
+   ShortCounter = 1
+   PageCounter = 1
+   
+   cls
+   print "@0F@";CenterText("Short BBS List")
+   color 9, 0
+   print string(79, chr(205))
+   print "@0F@ #   BBS Name                  Phone Number     Sysop Name       Nodes"
+   print
+   
+   open "wc:\data\bbslist.dat" for random as #1  len=len(ListDatabase)   
+   
+   do while not eof(1)
+      get #1, ShortCounter, ShortBBSListView
+   
+      print "@03@[@0F@";ShortCounter;"@03@] ";
+      if ShortCounter < 10 then print " ";
+      print "@0F@"left(pad(ShortBBSListView.BBSName,25),25);" @09@";left(pad(ShortBBSListView.PhoneNumber,14),14);"   @0D@";left(pad(ShortBBSListView.SysopName, 15),15);"  @05@";ShortBBSListView.NumOfNodes
+      inc(ShortCounter)
+      inc(PageCounter)
+      if PageCounter = 20 and ShortCounter < CountRecords then
+         Pause
+         cls
+         print "@0F@";CenterText("Short BBS List")
+         color 9, 0
+         print string(79, chr(205))
+         print "@0F@ #  BBS Name                  Phone Number     Sysop Name"
+         print
+         PageCounter = 1
+      end if
+   loop
+   close #1
+   print
+   Pause
+end sub
+
+sub DownloadList
+   dim ShortCounter as integer
+   dim ShortBBSListView as ListDatabase
+   
+   ShortCounter = 1
+
+   cls
+   Print "@0B@Download BBS List"
+   print Bar(35,0,9)
+   print
+   print "@03@Please wait while the list is being prepared...";
+   
+   dim i as integer = open "wc:\data\BBSList.Txt" for output
+   if i > 0 then
+      print #i, CenterText("PS-BBSList 1.0")
+      print #i, string(79, chr(205))
+      print #i, " #   BBS Name                  Phone Number     Sysop Name       Nodes"
+      print #i, ""
+      
+      dim j as integer = open "wc:\data\bbslist.dat" for random len=len(ListDatabase)   
+      
+      do while not eof(j)
+         get #j, ShortCounter, ShortBBSListView
+      
+         print #i, "[";ShortCounter;"] ";
+         if ShortCounter < 10 then print #i, " ";
+         print #i, left(pad(ShortBBSListView.BBSName,25),25);" ";left(pad(ShortBBSListView.PhoneNumber,14),14);"   ";left(pad(ShortBBSListView.SysopName, 15),15);"  ";ShortBBSListView.NumOfNodes
+         print #i, string(32, 32);pad(ShortBBSListView.City + ", " + ShortBBSListView.State, 32);"  [";
+         if ShortBBSListView.Doors then
+            print #i, "D";
+         end if
+         if ShortBBSListView.Echomail then
+            print #i, "E";
+         end if
+         if ShortBBSListView.Netmail then
+            print #i, "N";
+         end if
+         if ShortBBSListView.Adult then
+            print #i, "A";
+         end if
+         if ShortBBSListView.Rip then
+            print #i, "R";
+         end if
+         if ShortBBSListView.Gui then
+            print #i, "G";
+         end if
+         if ShortBBSListView.CDRom then
+            print #i, "C";
+         end if
+         print #i, "]"
+         if trim(ShortBBSListView.WebAddress) <> "" and len(trim(ShortBBSListView.WebAddress)) > 5 then
+            print #i, string(32, 32);"Webpage : ";ShortBBSListView.WebAddress
+         end if
+         
+         print #i, ""
+         
+         inc(ShortCounter)
+      loop
+      
+      print #i, "Key:"
+      print #i, "  D = Doors     R = RIP   A = Adult"
+      print #i, "  E = Echomail  G = GUI   C = CDRoms Online"
+      print #i, "  N = Netmail"
+      close #j
+      close #i
+   end if
+   
+   print " @0F@Done!"
+   print
+
+   dim protocol as Integer = user.Protocol
+   
+   if protocol = 0 then
+     protocol = SelectProtocol
+   end if
+   
+   if not SendFile("wc:\data\BBSList.Txt", protocol) then
+     print "There was an error while downloading, please try again."  
+     Print
+   end if
+   Pause
+end sub
+
+function WriteANSIOutput
+   dim ShortCounter as integer
+   dim ShortBBSListView as ListDatabase
+   
+   ShortCounter = 1
+
+   print "@03@Generating @0F@ANSI@03@ Output File...";
+   
+   dim i as integer = open trim(cf.OutputAnsi) for output
+   if i > 0 then
+      print #i, "@CLS@@0F@"
+      print #i, CenterText(Makewild.BBSName + " BBS List")
+      print #i, "@0F@";string(79, chr(205))
+      print #i, " @0F@#   @0F@BBS Name                  @09@Phone Number     @0D@Sysop Name       @05@Nodes"
+      print #i, "@0F@";string(79, chr(205))
+      
+      dim j as integer = open "wc:\data\bbslist.dat" for random len=len(ListDatabase)   
+      
+      do while not eof(j)
+         get #j, ShortCounter, ShortBBSListView
+      
+         print #i, "@03@[@0F@";ShortCounter;"@03@] ";
+         if ShortCounter < 10 then print #i, " ";
+         print #i, "@0F@";left(pad(ShortBBSListView.BBSName,25),25);" @09@";left(pad(ShortBBSListView.PhoneNumber,14),14);"   @0D@";left(pad(ShortBBSListView.SysopName, 15),15);"  @05@";ShortBBSListView.NumOfNodes
+         print #i, "@0F@";string(32, 32);pad(ShortBBSListView.City + "@08@, @0F@" + ShortBBSListView.State, 32);"  @03@[@0F@";
+         if ShortBBSListView.Doors then
+            print #i, "D";
+         end if
+         if ShortBBSListView.Echomail then
+            print #i, "E";
+         end if
+         if ShortBBSListView.Netmail then
+            print #i, "N";
+         end if
+         if ShortBBSListView.Adult then
+            print #i, "A";
+         end if
+         if ShortBBSListView.Rip then
+            print #i, "R";
+         end if
+         if ShortBBSListView.Gui then
+            print #i, "G";
+         end if
+         if ShortBBSListView.CDRom then
+            print #i, "C";
+         end if
+         print #i, "@03@]"
+         if trim(ShortBBSListView.WebAddress) <> "" and len(trim(ShortBBSListView.WebAddress)) > 5 then
+            print #i, string(32, 32);"@0B@Webpage @08@: @0F@";ShortBBSListView.WebAddress
+         end if
+         
+         print #i, "@01@";string(79, chr(196))
+         
+         inc(ShortCounter)
+      loop
+      
+      print #i, "@03@Key @08@:"
+      print #i, "  @0F@D@08@ = @03@Doors     @0F@R@08@ = @03@RIP   @0F@A@08@ = @03@Adult"
+      print #i, "  @0F@E@08@ = @03@Echomail  @0F@G@08@ = @03@GUI   @0F@C@08@ = @03@CDRoms Online"
+      print #i, "  @0F@N@08@ = @03@Netmail"
+      print #i, ""
+      print #i, CenterText("@03@This bulletin was generated by @0F@PS-BBSList 1.0@03@ by Mike Christensen")
+      
+      if Not Regged then
+         print #i, ""
+         print #i, CenterText("@0C@This copy of PS-BBSList Is @0F@UNREGISTERED@0C@!  Please tell your")
+         print #i, CenterText("sysop to register it!  Thank you.")
+      end if
+      print #i, ""
+      close #j
+      close #i
+   end if
+
+   print " @0F@Done!"
+end function
+
+function WriteHTMLOutput
+   dim ShortCounter as integer
+   dim ShortBBSListView as ListDatabase
+   
+   ShortCounter = 1
+
+   print "@03@Generating @0F@HTML@03@ Output File...";
+   
+   dim i as integer = open trim(cf.OutputHtml) for output
+   if i > 0 then
+      print #i, "<HTML><HEAD>"
+      print #i, "<TITLE>";Makewild.BBSName;" BBS List</TITLE>"
+      print #i, "</HEAD><BODY bgcolor=black background=""/public/graphics/psbbslist.jpg"" text=white link=bblue vlink=purple>"
+      
+      print #i, "<br><center><h1>";Makewild.BBSName;" BBS List</h1></center><br><br><center>"
+      
+      dim j as integer = open "wc:\data\bbslist.dat" for random len=len(ListDatabase)
+      
+      do while not eof(j)
+         get #j, ShortCounter, ShortBBSListView
+      
+         print #i, "<center><table border=5 width=80%>"
+         print #i, "   <tr><td bgcolor=purple width=5%>#</td>"
+         print #i, "   <td bgcolor=purple width=35%>BBS Name/Codes</td>"
+         print #i, "   <td bgcolor=purple width=35%>Phone Number/Webpage</td>"
+         print #i, "   <td bgcolor=purple width=35%>Sysop/Location</td>"
+         print #i, "   <td bgcolor=purple width=10%>Nodes</td>"
+         print #i, "   </tr>"
+         print #i, ""
+         print #i, "   <tr>"
+         print #i, "   <td bgcolor=beige><font color=black>";ShortCounter;"</font></td>"
+         print #i, "   <td bgcolor=beige><font color=black>";ShortBBSListView.BBSName;"</td>"
+         print #i, "   <td bgcolor=beige><font color=black>";ShortBBSListView.PhoneNumber;"</td>"
+         print #i, "   <td bgcolor=beige><font color=black>";ShortBBSListView.SysopName;"</td>"
+         print #i, "   <td bgcolor=beige><font color=black>";ShortBBSListView.NumOfNodes;"</td></tr>"
+         print #i, "   <tr>"
+         print #i, ""
+         print #i, "   <td bgcolor=beige>&nbsp;</td>";
+
+         print #i, "   <td bgcolor=beige><font color=black>[";
+         
+         if ShortBBSListView.Doors then
+            print #i, "D";
+         end if
+         if ShortBBSListView.Echomail then
+            print #i, "E";
+         end if
+         if ShortBBSListView.Netmail then
+            print #i, "N";
+         end if
+         if ShortBBSListView.Adult then
+            print #i, "A";
+         end if
+         if ShortBBSListView.Rip then
+            print #i, "R";
+         end if
+         if ShortBBSListView.Gui then
+            print #i, "G";
+         end if
+         if ShortBBSListView.CDRom then
+            print #i, "C";
+         end if
+         
+         print #i, "]</td>"
+
+         if trim(ShortBBSListView.WebAddress) <> "" and len(trim(ShortBBSListView.WebAddress)) > 5 then
+            if InStr(ucase(ShortBBSListView.WebAddress), "HTTP://") > 0 then
+               print #i, "<td bgcolor=beige><font color=black>Webpage : <a href=""";ShortBBSListView.WebAddress;""">";ShortBBSListView.WebAddress;"</a></td>"
+            else
+               print #i, "<td bgcolor=beige><font color=black>Webpage : <a href=""http://";ShortBBSListView.WebAddress;""">";ShortBBSListView.WebAddress;"</a></td>"
+            end if
+         else
+            print #i, "<td bgcolor=beige>&nbsp;</td>"
+         end if
+
+         print #i, "   <td bgcolor=beige><font color=black>";ShortBBSListView.City;", ";ShortBBSListView.State;"</td>"
+
+         select case ShortBBSListView.Subscription
+            case 0
+               print #i, "   <td bgcolor=beige><font color=black>Free</td>"
+            case 1
+               print #i, "   <td bgcolor=beige><font color=black>Pay</td>"
+            case 3
+               print #i, "   <td bgcolor=beige><font color=black>Both</td>"
+         end select
+         
+         
+         print #i, "   </tr>"
+         print #i, "</table></center>"
+         print #i, "<br><br>"
+
+         inc(ShortCounter)
+      loop
+      
+      print #i, "<BR><table cellpadding=5><tr><td><table border=5><tr><td><table border=0 cellpadding=5><tr><td bgcolor=purple colspan=4><center><font size=3><b>Key</b></font></center></td></tr>"
+      print #i, "<tr><td bgcolor=purple><font size=1><b>D</b> = Doors</td><td bgcolor=purple><font size=1><b>R</b> = RIP</td><td bgcolor=purple><font size=1><b>A</b> = Adult</td><td bgcolor=purple><font size=1><b>N</b> = Netmail</td></tr>"
+      print #i, "<tr><td bgcolor=purple><font size=1><b>E</b> = Echomail</td><td bgcolor=purple><font size=1><b>G</b> = GUI</td><td bgcolor=purple><font size=1><b>C</b> = CDRoms Online</td><td bgcolor=purple>&nbsp;</td></tr>"
+      print #i, "</table></td></tr></table></td><td>"
+
+      print #i, "<table border=5><tr><td><table border=0 cellpadding=5>"
+      print #i, "<tr><td bgcolor=purple><font size=1>Free - No charge required for full access to the BBS</td></tr>"
+      print #i, "<tr><td bgcolor=purple><font size=1>Pay - Subscription fee required to access the BBS</td></tr>"
+      print #i, "<tr><td bgcolor=purple><font size=1>Both - Payment is option or required for better access</td></tr>"
+      print #i, "</table></td></tr></table></td></tr></table>"
+      
+      print #i, "<center>This bulletin was generated by <b>PS-BBSList 1.0</b> by Mike Christensen</center>"
+      
+      if Not Regged then
+         print #i, "<br>"
+         print #i, "<b>This copy of PS-BBSList Is UNREGISTERED!  Please tell your"
+         print #i, "sysop to register it!  Thank you."
+      end if
+      print #i, "</body></html>"
+      close #j
+      close #i
+   end if
+
+   print " @0F@Done!"
+end function
+
+sub SysopMenu
+   dim ConfigChoice as string * 1
+   
+   do while ConfigChoice <> "Q"
+      Color 15,0
+      Cls
+      print "@03@PS-BBSList Configuration Mananger          Time Left@08@:@0F@ @USER.TIMELEFTTODAY@"
+      print Bar(60,0,9)
+      Print
+
+      print "@03@[@0F@ 1@03@]  @0F@Allow Users To Add BBSs     @08@: @0F@";DispYesNo(cf.AllowAdd)
+      print "@03@[@0F@ 2@03@]  @0F@Allow Users To Delete BBSs  @08@: @0F@";DispYesNo(cf.AllowDelete)
+      print "@03@[@0F@ 3@03@]  @0F@Allow Users To Edit BBSs    @08@: @0F@";DispYesNo(cf.AllowEdit)
+      print "@03@[@0F@ 4@03@]  @0F@Allow Downloading Of List   @08@: @0F@";DispYesNo(cf.AllowDownload)
+      print "@03@[@0F@ 5@03@]  @0F@Maximum BBSs In Database    @08@: @0F@";cf.MaxRecords
+      print "@03@[@0F@ 6@03@]  @0F@Maximum BBSs Per User       @08@: @0F@";cf.MaxRecPerUser
+      print "@03@[@0F@ 7@03@]  @0F@Who Is Online Program       @08@: @0F@";cf.WhoOnline
+      print "@03@[@0F@ 8@03@]  @0F@Who Is Online Parameters    @08@: @0F@";cf.WhoOnlineParam
+      print "@03@[@0F@ 9@03@]  @0F@Last User To Use PS-BBSList @08@: @0F@";cf.LastUser
+      print "@03@[@0F@ T@03@]  @0F@Times PS-BBSList Was Ran    @08@: @0F@";cf.TimesRun
+      print
+      print "@03@[@0F@ A@03@]  @0F@ANSI Output File            @08@: @0F@";cf.OutputAnsi
+      print "@03@[@0F@ B@03@]  @0F@HTML Output File            @08@: @0F@";cf.OutputHtml
+      print
+      print "@03@[@0F@ R@03@]  @0F@Registration Code           @08@: @0F@";
+      if Regged then
+         Print "Registered"
+      else
+         print "Unregistered"
+      end if
+      print
+      print "@03@[@0F@ H@03@]  @0F@Help On Settings"
+      print "@03@[@0F@ Q@03@]  @0F@Quit Configuration Manager"
+      print 
+ 
+      do
+          ConfigChoice = ucase(CHR(readkey(100)))
+          if ConfigChoice <> "" then
+             exit do
+          end if
+      loop
+ 
+      select case ucase(ConfigChoice)
+         case "1"
+            cf.AllowAdd = not cf.AllowAdd
+            WriteConfig
+         case "2"
+            cf.AllowDelete = not cf.AllowDelete
+            WriteConfig
+         case "3"
+            cf.AllowEdit = not cf.AllowEdit
+            WriteConfig
+         case "4"
+            cf.AllowDownload = not cf.AllowDownload
+            WriteConfig
+         case "5"
+            locate 8, 36
+            SetInitialString(str(cf.MaxRecords))
+            cf.MaxRecords = val(InputString(5))
+            WriteConfig
+         case "6"
+            locate 9, 36
+            SetInitialString(str(cf.MaxRecPerUser))
+            cf.MaxRecPerUser = val(InputString(5))
+            WriteConfig
+         case "7"
+            locate 10, 36
+            SetInitialString(cf.WhoOnline)
+            cf.WhoOnline = InputString(50)
+            WriteConfig
+         case "8"
+            locate 11, 36
+            SetInitialString(cf.WhoOnlineParam)
+            cf.WhoOnlineParam = InputString(50)
+            WriteConfig
+         case "9"
+            locate 12, 36
+            SetInitialString(cf.LastUser)
+            cf.LastUser = InputString(50)
+            WriteConfig
+         case "T"
+            locate 13, 36
+            SetInitialString(str(cf.TimesRun))
+            cf.TimesRun = val(InputString(10))
+            WriteConfig
+         case "A"
+            locate 15, 36
+            SetInitialString(cf.OutputAnsi)
+            cf.OutputAnsi = InputString(50)
+            WriteConfig
+         case "B"
+            locate 16, 36
+            SetInitialString(cf.OutputHtml)
+            cf.OutputHtml = InputString(50)
+            WriteConfig
+         case "H"
+            Cls
+            DisplayFile "wc:\help\psblsys.bbs"
+            print
+            Pause
+         case "R"
+            dim TempRegCode as string
+            
+            do
+               locate 18, 36
+               print string(44, 32);
+               locate 18, 36
+               input TempRegCode
+               If TempRegCode <> "" then
+                  cf.RegCode = Trim(TempRegCode)
+                  WriteConfig
+                  exit do
+               end if
+               If trim(TempRegCode) = "" then
+                  exit do
+               end if
+            loop
+            If NOT Regged then
+               locate 18, 37
+               print string(43,32);
+               locate 18, 37
+               Print "@84@INVALID REGISTRATION CODE!"
+               Delay 3
+            else
+               locate 18, 37
+               print string(43,32);
+               locate 18, 37
+               Print "@8F@Thank you for registering!"
+               Delay 3
+            end if
+      end select
+   loop
+end sub
+
+dim MainMenuChoice as string * 1
+dim SubCounter as integer = 0
+dim Tempbbslist as ListDatabase
+
+ReadConfig
+if not Regged and CountRecords > 8 then
+   cls
+   Print "@0B@Registration Security Error"
+   print Bar(35,0,9)
+   print
+   print "@03@You are using a database with over 8 entries, and your copy of"
+   print "PS-BBSList is unregistered.  The program will not run until you delete"
+   print "the database file.  I assume you know how to do this since you're trying"
+   print "to hack the program in the first place."
+   print
+   pause
+   End
+end if
+
+do while MainMenuChoice <> "Q"
+
+   open "wc:\data\bbslist.dat" for random as #1  len=len(ListDatabase)
+      Subtext(1) = FormatNumber(lof(1)) 
+   close #1
+  
+   if not DisplayFile("wc:\menu\psblmain.bbs") then
+      print "[Error] wc:\wc5\menu\psblmain.bbs is missing."
+   end if
+   
+   do
+      MainMenuChoice = ucase(chr(readkey(100)))
+      if MainMenuChoice <> "" then
+         exit do
+      end if
+
+      do while ReadChannel(0, msg)
+         ProcessChannelMessage(msg)
+      loop
+
+   loop
+
+   select case ucase(MainMenuChoice)
+      case "*"
+         if GetObjectFlags(OBJECTID_MASTER_SYSOP) then
+            SysopMenu
+         end if
+      case "W"
+         Cls
+         if trim(cf.WhoOnline) <> "" then run cf.WhoOnline, cf.WhoOnlineParam
+      case "Q"
+           cf.LastUser = UpperLower(user.info.name)
+           inc(cf.TimesRun)
+           WriteConfig
+           cls
+           Print "@0F@Thank you for using PS-BBSList 1.0 By Mike Christensen"
+           print "(c) 1999 All Rights Reserved"
+           print
+           if trim(cf.OutputAnsi) <> "" then WriteANSIOutput
+           if trim(cf.OutputHtml) <> "" then WriteHTMLOutput
+           if trim(cf.OutputHtml) <> "" or trim(cf.OutputAnsi) <> "" then print
+           print "@03@You are the @0F@";str(cf.TimesRun);Ordinal(str(cf.TimesRun));" @03@person to use this program."
+
+           //print "@03@You are the @0F@";str(cf.TimesRan);Ordinal(str(cf.TimesRan));" @03@person to use this program."
+           
+           Print
+           If NOT regged then
+              Print "@04@UNREGISTERED EVALUATION COPY..."
+              Print "@07@Seven second delay, please help your sysop register this program."
+              Delay 7
+           else
+              Print "@03@Registered to @08@: @0F@@SYSTEM.BBSNAME@"
+              Delay 1
+           end if
+           end
+      
+      case "C"
+         if GetObjectFlags(OBJECTID_MASTER_SYSOP) or cf.AllowAdd then
+            if CountRecords < cf.MaxRecords or cf.MaxRecords = 0 or GetObjectFlags(OBJECTID_MASTER_SYSOP) then
+               if not CheckMaxPerUser then
+                  if not Regged and CountRecords >= 8 then
+                     cls
+                     Print "@0B@Unregistered Limitation!"
+                     print Bar(35,0,9)
+                     print
+                     print "@03@This system is running the unregistered version of PS-BBSList, which."
+                     print "will not allow more than 8 entries in the database.  Please convince"
+                     print "your sysop to register.  The cost is only $15."
+                     print
+                     Pause
+                  else
+                     AddBBSEntry
+                  end if
+               else
+                  cls
+                  Print "@0B@Personal Limit Reached"
+                  print Bar(35,0,9)
+                  print
+                  print "@03@You will have to delete one of your old records before you are allowed"
+                  print "to add another one."
+                  print
+                  Pause
+               end if
+            else
+               cls
+               Print "@0B@No More Records Allowed"
+               print Bar(35,0,9)
+               print
+               print "@03@The maximum number of booths has been reached."
+               print
+               Pause
+            end if
+         end if
+
+      case "D"
+         if GetObjectFlags(OBJECTID_MASTER_SYSOP) or cf.AllowDownload then
+            DownloadList
+         end if
+         
+      case "V"
+         dim ViewListChoice as string * 1
+         
+         ViewListChoice = ""
+         cls
+         print "@0F@Select An Option"
+         print Bar(35,0,9)
+         print 
+         print "@0F@S@03@)hort List"
+         print "@0F@D@03@)etailed List"
+         print "@0F@Q@03@)uit"
+         print
+
+         do until ViewListChoice = "Q" or ViewListChoice = chr(13)
+            do
+               ViewListChoice = ucase(chr(readkey(100)))
+               if ViewListChoice <> "" then
+                  exit do
+               end if
+         
+               do while ReadChannel(0, msg)
+                  ProcessChannelMessage(msg)
+               loop
+         
+            loop
+         
+            select case ucase(ViewListChoice)
+               case "S"
+                  ViewShortList
+                  exit do
+               
+               case "D"
+                  ViewDetailedList
+                  exit do
+            end select
+         loop
+
+      case "S"
+         SearchList
+
+      case "A"
+         cls
+         print "@0F@About PS-BBSList"
+         print Bar(35,0,9)              
+         print "@0F@PS-BBSList 1.0 for Wildcat! Interactive Net Server"
+         print "@07@(@0F@c@07@) 1999 Mike Christensen All Rights Reserved"
+         print
+         Print "@0F@Programmed By     @08@: @03@Mike Christensen"
+         print "@0F@Registration Cost @08@: @03@$15"
+         print
+         Print "@0F@Support@08@-"
+         print "   @0F@Telnet @08@: @03@bbs.piscessoft.com"
+         print "   @0F@FTP    @08@: @03@ftp.piscessoft.com"
+         print "   @0F@WWW    @08@: @03@www.piscessoft.com"
+         print "   @0F@Email  @08@: @03@hiawatha@piscessoft.com"
+         print "            hiawatha@piscessoft.com"
+         print
+         print "@03@PS-BBSList is currently running on @0F@@SYSTEM.BBSNAME@"
+         print
+         Pause
+         
+   end select
+loop
+
+                            
