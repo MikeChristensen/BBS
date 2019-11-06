@@ -1,0 +1,1496 @@
+//To do before first HTML release
+
+
+//To do/Ideas - Before 2.0 Release
+
+   //Share added choices between BBSs
+   //When change vote, add > 26, should let you select, not return to main menu
+   //Should show last vote added when > 26
+   //When enable InterBBS mode, offer to create PS-Vote account if it doesn't exist.
+   //Delete choices option in booth editor, moves up all others
+   //When voting all, show [x/countbooths] before title
+   //Define priviledges by sec. level (Booth Moderators)
+   //Average Uses per day
+   //Average new booths per day
+   //Average votes per day
+   //InterBBS Messages
+   //Automatic backup
+   //Sync database with all other BBSs (Import all booths except duplicates)
+   //users can edit their own booth if sysop lets them
+   //Option to automatically add other BBSs to NodeRec database
+   //Add [P]revious option on pauses
+   //Pay attention to hotkeys
+   //Make my own Yes/No input routine
+
+#include "util.wch"
+#include "cmdline.wch"
+#include "dispfile.wch"
+#include "timeutil.wch"
+#include "dateutil.wch"
+#include "pagemsg.wch"
+#include "msgutil.wch"
+#include "windows.wch"
+#include "psoft.wch"
+#include "htmlutil.wch"
+
+dim msg as TChannelMessage
+const SelectVote = 1
+
+type BoothRecord
+   UserID       as integer
+   UserName     as string * 30
+   Choice       as string * 1
+end type
+
+type BoothIndex
+   RecordID     as integer
+   PostedBy     as string * 30
+   Anon         as boolean
+   Header       as string * 30
+   Question     as string * 240
+   Choices(26)  as string * 45
+   Results(26)  as integer
+   TotalVotes   as integer
+   AddOk        as boolean
+   VotesAloud   as integer
+   AllowChange  as boolean
+   DatePosted   as DateTime
+   InterBBS as boolean
+   FromDomain as string * 30
+   FromBBS as string * 50
+   PassKey as integer
+end type
+
+type NodeRecord
+   BBSName as string * 50
+   Location as string * 50
+   SysopAddress as string * 50
+   DomainName as string * 30
+   SendOk as boolean
+   RecOk as boolean
+end type
+
+type ConfigFile
+   RegCode as string * 80
+   LastUser as string * 25
+   GraphChar as byte
+   AllowAnon as boolean
+   AllowAdd as boolean
+   AllowChange as boolean
+   MaxVotes as integer
+   MaxBooths as integer
+   WhoOnline as string * 50
+   WhoOnlineParam as string * 50
+   HighMsg as integer
+   InterBBSMode as boolean
+   LocalDomain as string * 30
+   TotalUses as integer
+end type
+
+type ExportVote
+   Header as string * 30
+   VoteLetter as string * 1
+   NameOfVoter as string * 60
+   FromDomain as string * 30
+   PassKey as integer
+end type
+
+dim booth as BoothIndex
+dim cf as ConfigFile
+dim Node as NodeRecord
+
+dim DarkLight as boolean = FALSE
+dim Filename as string
+dim ListReturn as string
+dim IBBSCounter as integer = 0
+dim LastSearch as string
+dim GlobalQuit as boolean
+dim URL as string = ""
+
+function Regged as boolean
+  Regged = true
+end function
+
+function BadAts(CheckBadAts as string) as boolean
+   dim BadWord as string
+   dim TempBadAts as boolean = FALSE
+   
+   if instr(CheckBadAts, "@CLS@") > 0 then TempBadAts = TRUE
+   if instr(CheckBadAts, "@PAUSE@") > 0 then TempBadAts = TRUE
+   if instr(CheckBadAts, "@NOPAUSE@") > 0 then TempBadAts = TRUE
+   if instr(CheckBadAts, "@00@") > 0 then TempBadAts = TRUE
+   if instr(CheckBadAts, "@BELL@") > 0 then TempBadAts = TRUE
+   if instr(CheckBadAts, "@LOGOFF@") > 0 then TempBadAts = TRUE
+   if instr(CheckBadAts, "@NOSTOP@") > 0 then TempBadAts = TRUE
+   if instr(CheckBadAts, "@STOP@") > 0 then TempBadAts = TRUE
+   if instr(CheckBadAts, "@HANGUP@") > 0 then TempBadAts = TRUE
+   
+   if not TempBadAts then
+      dim CussFilter as integer = open "wc:\data\BadWords.Dat" for input
+      if CussFilter > 0 then
+         do while not eof(CussFilter)
+            input #CussFilter, BadWord
+            if instr(ucase(CheckBadAts), ucase(trim(BadWord))) > 0 then 
+               TempBadAts = TRUE
+               exit do
+            end if
+         loop
+         
+         close #CussFilter
+      end if
+   end if
+   
+   if TempBadAts then
+      BadAts = TRUE
+   else
+      BadAts = FALSE
+   end if
+end function
+
+sub ReadConfig
+   
+   dim ConfigFound as boolean
+   dim ReadConfigFile as integer = open "wc:\data\psvote.cfg" for random len = len(ConfigFile)
+   get #ReadConfigFile, 1, cf
+   if lof(ReadConfigFile) > 0 then 
+      ConfigFound = TRUE
+   end if
+   close #ReadConfigFile
+   
+   if not ConfigFound then
+
+      Print "PS-Vote First Time Setup<BR><BR>"
+      print
+      print "Welcome to PS-Vote.  A configuration file was not found, therefore"
+      print "we assume this is the first time you have ran this program.  A config file"
+      print "(\wc5\data\psvote.cfg) is now being generated using the default values.  You"
+      print "may change these values by using the Configuration option off the ANSI PS-Vote"
+      print "Sysop Menu.  If you are happy with this program, please consider registering"
+      print "it.  Otherwise, please remove this program after 30 days.  Thank you."
+      print "<HR><BR>"
+    
+      cf.RegCode = "0000000000"
+      cf.LastUser = "No Last User"
+      cf.GraphChar = 205
+      cf.AllowAnon = True
+      cf.AllowAdd = True
+      cf.AllowChange = True
+      cf.MaxVotes = 0
+      cf.MaxBooths = 0
+      cf.WhoOnline = "Who Is Online"
+      cf.WhoOnlineParam = ""
+      cf.HighMsg = 0
+      cf.InterBBSMode = FALSE
+
+      dim WriteConfigFile as integer = open "wc:\data\psvote.cfg" for random len=len(ConfigFile)
+         put #WriteConfigFile, 1, cf
+      close #WriteConfigFile
+      
+   end if
+   
+end sub
+
+sub WriteConfig
+
+   open "wc:\data\psvote.cfg" for random as #1 len=len(ConfigFile)
+      put #1, 1, cf
+   close #1
+
+end sub
+
+sub WriteDB
+   open "wc:\data\PSVote.dat" for random as #1  len=len(BoothIndex)
+      put #1, lof(1) + 1, booth
+   close #1
+end sub
+
+sub UpdateDB(RecordToUpdate as integer, BBSListToUpdate as BoothIndex)
+   open "wc:\data\PSVote.dat" for random as #1  len=len(BoothIndex)
+      put #1, RecordToUpdate, BBSListToUpdate
+   close #1
+end sub
+
+function CountBooths as integer
+   dim CountBoothsFile as integer = open "wc:\data\PSVote.dat" for random len=len(BoothIndex)
+      CountBooths = lof(CountBoothsFile)
+   close #CountBoothsFile
+end function
+
+sub DeleteBooth(BoothToDelete as integer)
+   dim ResortArray(CountBooths - 1) as BoothIndex
+   dim ResortCounter as integer
+   dim TempHolder as integer
+   
+   if BoothToDelete <= CountBooths then
+      open "wc:\data\PSVote.dat" for random as #2  len=len(BoothIndex)
+         for ResortCounter = 1 to BoothToDelete - 1
+            get #2, ResortCounter, ResortArray(ResortCounter)
+         next
+         
+         if not eof(2) then
+            for ResortCounter = BoothToDelete + 1 to CountBooths
+               get #2, ResortCounter, ResortArray(ResortCounter - 1)
+            next
+         end if
+      close #2
+      TempHolder = CountBooths - 1
+      kill "wc:\data\PSVote.Dat"
+      open "wc:\data\PSVote.Dat" for random as #2 len=len(BoothIndex)
+         for ResortCounter = 1 to TempHolder
+            put #2, ResortCounter, ResortArray(ResortCounter)
+         next
+      close #2
+      kill "wc:\data\Vote" + Trim(Str(BoothToDelete)) + ".Dat"      
+      for ResortCounter = BoothToDelete + 1 to CountBooths + 1
+         name "wc:\data\Vote" + Trim(Str(ResortCounter)) + ".Dat" as "wc:\data\Vote" + Trim(Str(ResortCounter - 1)) + ".Dat"
+      next
+   end if
+end sub
+
+function CountChoices(BoothToCount as BoothIndex) as byte
+   dim TempCounter as byte
+
+   For TempCounter = 1 to 26
+      if BoothToCount.Choices(TempCounter) = "" then exit for
+   next
+   
+   CountChoices = TempCounter - 1
+end function
+
+function CountOtherBBSs as integer
+   open "wc:\data\psvibbs.dat" for random as #1  len=len(NodeRecord)
+      CountOtherBBSs = lof(1)
+   close #1
+end function
+
+function SelectPause as string
+   print "@0B@[@N@Enter @0B@Selection@N@, @0B@ENTER @N@to continue or @0F@Q @N@to Quit] @08@: @0F@";
+   SelectPause = InputString(5)
+end function
+
+function NotVoted(BoothToCheck as integer) as boolean
+   dim BoothToCheckRec as BoothRecord
+   dim CheckCounter as integer
+   dim TempSwitch as Boolean
+   
+   TempSwitch = TRUE   
+   Filename = "wc:\data\Vote" + Trim(Str(BoothToCheck)) + ".Dat"
+   CheckCounter = 0
+   open Filename for random as #2  len=len(BoothRecord)
+      do while not eof(2)
+         inc(CheckCounter)
+         get #2, CheckCounter, BoothToCheckRec
+         if BoothToCheckRec.UserID = user.info.id then 
+            TempSwitch = FALSE
+            exit do
+         end if
+      loop
+   close #2
+
+   If TempSwitch then 
+      NotVoted = TRUE 
+   else 
+      NotVoted = FALSE
+   end if
+
+end function
+
+sub MarkVoted(BoothToMark as integer, MarkChoice as string, PassUserId as integer, PassUserName as string)
+   dim MarkVote as BoothRecord
+   dim ReadMarked as BoothRecord
+   dim Finder as integer = 0
+   dim UserPos as integer = 0
+
+   Filename = "wc:\data\Vote" + Trim(Str(BoothToMark)) + ".Dat"
+   MarkVote.Choice = MarkChoice
+
+   if PassUserId = 0 and PassUserName = "" then
+      MarkVote.UserID = user.info.id
+      MarkVote.UserName = user.info.name
+      open Filename for random as #1 len=len(BoothRecord)
+         do while not eof(1)
+            inc(Finder)
+            get #1, Finder, ReadMarked
+            if ReadMarked.UserID = user.info.id then 
+               UserPos = Finder
+               ReadMarked.Choice = MarkChoice
+               exit do
+            end if
+         loop
+         if UserPos = 0 then
+            put #1, lof(1) + 1, MarkVote
+         else
+            put #1, UserPos, ReadMarked
+         end if
+      close #1
+   else
+      MarkVote.UserID = 0
+      MarkVote.UserName = PassUserName
+      open Filename for random as #1 len=len(BoothRecord)
+         put #1, lof(1) + 1, MarkVote
+      close #1
+   end if
+
+end sub
+
+function GetFirstUnvoted as integer
+   dim GetFirstCounter as integer = 0
+   dim GetFirstRec as BoothIndex
+   
+   open "wc:\data\PSVote.dat" for random as #1  len=len(BoothIndex)
+            
+   do while not eof(1)
+      inc(GetFirstCounter)
+      get #1, GetFirstCounter, GetFirstRec
+      if NotVoted(GetFirstCounter) then 
+        if GetFirstRec.TotalVotes < GetFirstRec.VotesAloud or GetFirstRec.VotesAloud = 0 then
+            GetFirstUnvoted = GetFirstCounter
+            exit do
+         end if
+      end if
+   loop
+   close #1
+end function
+
+function VotedNone as boolean
+   dim VotedNoneCounter as integer = 0
+   dim VotedNoneRec as BoothIndex
+   dim TempVotedNone as boolean = TRUE
+   
+   open "wc:\data\PSVote.dat" for random as #1  len=len(BoothIndex)
+            
+   do while not eof(1)
+      inc(VotedNoneCounter)
+      get #1, VotedNoneCounter, VotedNoneRec
+      if NOT NotVoted(VotedNoneCounter) then
+         TempVotedNone = FALSE
+      end if
+   loop
+   close #1
+   VotedNone = TempVotedNone
+end function
+
+sub ListBooths(OnlyNotVoted as boolean)
+   dim TempCounter as integer = 0
+   dim TempBooth as BoothIndex
+   dim PageCounter as byte = 0
+   dim FileLen as integer
+   
+   if OnlyNotVoted and GetFirstUnvoted = 0 then
+      print "<center><b>You have voted on every booth.</b></center><hr>"
+      exit sub
+   end if
+
+   Print "<CENTER><TABLE BORDER>"
+   print "<TR><B><TD BGCOLOR=TEAL>Num</TD><TD BGCOLOR=TEAL>Description</TD><TD BGCOLOR=TEAL>Author</TD><TD BGCOLOR=TEAL>Votes</TD><TD BGCOLOR=TEAL>Max Votes</TD></TR>"
+
+   do until TempCounter = CountBooths
+      inc(TempCounter)
+      inc(PageCounter)
+
+      open "wc:\data\PSVote.dat" for random as #1  len=len(BoothIndex)
+         get #1, TempCounter, TempBooth
+         FileLen = lof(1)
+      close #1
+
+      TempBooth.PostedBy = UpperLower(TempBooth.PostedBy)
+      
+      if TempBooth.Anon and GetObjectFlags(OBJECTID_MASTER_SYSOP) = 0 then TempBooth.PostedBy = "Anonymous"
+      if TempBooth.Anon and GetObjectFlags(OBJECTID_MASTER_SYSOP) then TempBooth.PostedBy = TempBooth.PostedBy + " (A)"
+      if TempBooth.InterBBS then TempBooth.PostedBy = TempBooth.PostedBy + " (I)"
+      if NotVoted(TempCounter) then
+         print "<TR><B><TD>";TempCounter;")</TD><TD><A HREF=""html-psvote?VoteBooth=1&booth=";TempCounter;""">";pad(TempBooth.Header, 33);"</A></TD><TD>";left(pad(TempBooth.PostedBy,24),24);"</TD><TD>";pad(FormatNumber(TempBooth.TotalVotes),8);"</B>";
+         if TempBooth.VotesAloud > 0 then 
+            print "</TD><TD>";str(TempBooth.VotesAloud);"</A></TD></TR>"
+         else
+            print "</TD><TD>";"Unlimited";"</A></TD></TR>"
+         end if
+      else
+         if OnlyNotVoted = FALSE then
+            print "<TR><B><TD>";TempCounter;")</TD><TD>";pad(TempBooth.Header, 33);"</TD><TD>";left(pad(TempBooth.PostedBy,24),24);"</TD><TD>";pad(FormatNumber(TempBooth.TotalVotes),8);"</B>";
+            if TempBooth.VotesAloud > 0 then 
+               print "</TD><TD>";str(TempBooth.VotesAloud);"</TD></TR>"
+            else
+               print "</TD><TD>";"Unlimited";"</TD></TR>"
+            end if
+         end if
+      end if
+   loop
+   print "</TABLE></CENTER><HR>"
+end sub
+
+sub ChangeVote
+   dim ChangeVoteCounter as integer = 0
+   dim ChangeVoteBooth as BoothIndex
+   dim ChangeVotePageCounter as byte = 0
+   dim ChangeVoteFileLen as integer
+   
+   if VotedNone then
+      print "<center><b>You haven't voted on any booths yet.</b></center>"
+      exit sub
+   end if
+
+   Print "<CENTER><TABLE BORDER>"
+   print "<TR><B><TD BGCOLOR=TEAL>Num</TD><TD BGCOLOR=TEAL>Description</TD><TD BGCOLOR=TEAL>Author</TD><TD BGCOLOR=TEAL>Votes</TD><TD BGCOLOR=TEAL>Max Votes</TD></TR>"
+
+   do until ChangeVoteCounter = CountBooths
+      inc(ChangeVoteCounter)
+      inc(ChangeVotePageCounter)
+
+      open "wc:\data\PSVote.dat" for random as #1  len=len(BoothIndex)
+         get #1, ChangeVoteCounter, ChangeVoteBooth
+         ChangeVoteFileLen = lof(1)
+      close #1
+
+      ChangeVoteBooth.PostedBy = UpperLower(ChangeVoteBooth.PostedBy)
+      
+      if ChangeVoteBooth.Anon and GetObjectFlags(OBJECTID_MASTER_SYSOP) = 0 then ChangeVoteBooth.PostedBy = "Anonymous"
+      if ChangeVoteBooth.Anon and GetObjectFlags(OBJECTID_MASTER_SYSOP) then ChangeVoteBooth.PostedBy = ChangeVoteBooth.PostedBy + " (A)"
+      if ChangeVoteBooth.InterBBS then ChangeVoteBooth.PostedBy = ChangeVoteBooth.PostedBy + " (I)"
+      if NOT NotVoted(ChangeVoteCounter) and ChangeVoteBooth.AllowChange then
+         print "<TR><B><TD>";ChangeVoteCounter;")</TD><TD><A HREF=""html-psvote?ChangeVote=1&booth=";ChangeVoteCounter;""">";pad(ChangeVoteBooth.Header, 33);
+         print "</A></TD><TD>";left(pad(ChangeVoteBooth.PostedBy,24),24);"</TD><TD>";pad(FormatNumber(ChangeVoteBooth.TotalVotes),8);"</B>";
+         if ChangeVoteBooth.VotesAloud > 0 then 
+            print "</TD><TD>";str(ChangeVoteBooth.VotesAloud);"</A></TD></TR>"
+         else
+            print "</TD><TD>";"Unlimited";"</A></TD></TR>"
+         end if
+      end if
+   loop
+   print "</TABLE></CENTER><HR>"
+end sub
+
+function GetUserVote(FindWhichBooth as integer) as byte
+   dim TempCounter as integer = 0
+   dim TempSeeker as BoothRecord
+
+   Filename = "wc:\data\Vote" + Trim(Str(FindWhichBooth)) + ".Dat"
+   GetUserVote = 0
+   
+   open Filename for random as #1 len=len(BoothRecord)
+   do while not eof(1)
+      inc(TempCounter)
+      get #1, TempCounter, TempSeeker
+      if TempSeeker.UserID = user.info.id then 
+         GetUserVote = asc(TempSeeker.Choice) - 64
+         exit do
+      end if
+   loop
+   close #1
+end function
+
+sub DoChangeVote
+   dim NewVote as byte
+   dim OldVote as byte
+   dim BoothToChange as integer
+   dim BoothToChangeRec as BoothIndex
+   
+   BoothToChange = val(GetParamStr(URL, "Booth"))
+   NewVote = val(GetParamStr(URL, "Vote"))
+   OldVote = GetUserVote(BoothToChange)
+   
+   open "wc:\data\PSVote.dat" for random as #1  len=len(BoothIndex)
+      get #1, BoothToChange, BoothToChangeRec
+   close #1
+        
+   if NewVote > 0 and NewVote < 27 then
+      if BoothToChangeRec.Choices(NewVote) <> "" then
+         dec(BoothToChangeRec.Results(OldVote))
+         inc(BoothToChangeRec.Results(NewVote))
+         UpdateDB(BoothToChange, BoothToChangeRec)
+         MarkVoted(BoothToChange, chr(NewVote + 64), 0, "")
+         print "<center><b>Your vote has been changed.</b></center>"
+         print "<hr>"
+      else
+         print "<center><b>Invalid choice number.</b></center>"
+      end if
+   else
+      print "<center><b>Invalid choice number.</b></center>"
+   end if
+end sub
+
+sub ProcChangeVote
+   dim VoteToChangeString as string
+   dim VoteToChange as integer
+   dim NewVote as string
+   dim OldVote as byte
+   dim RecToChange as BoothIndex
+   dim counter as byte
+   dim UserVote as byte
+   
+   VoteToChange = val(GetParamStr(URL, "booth"))
+   
+   if VoteToChange <= 0 or VoteToChange > CountBooths then
+      print "<center><b>Error: Invalid booth number.</b></center>"
+      exit sub
+   end if
+   
+   if NOT NotVoted(VoteToChange) then
+      open "wc:\data\PSVote.dat" for random as #1  len=len(BoothIndex)
+         get #1, VoteToChange, RecToChange
+      close #1
+      
+         if NOT RecToChange.AllowChange then
+            print "<center><b>You are not allowed to change your vote on this booth.</b></center>"
+            exit sub
+         end if
+         
+         UserVote = GetUserVote(VoteToChange)
+         
+         if RecToChange.TotalVotes < RecToChange.VotesAloud or RecToChange.VotesAloud = 0 then
+            print "<center><table border>"
+            print "<tr><td>";RecToChange.Header;"</td><td>";FormatNumber(RecToChange.TotalVotes);" Total Vote";
+            if RecToChange.TotalVotes <> 1 then 
+               print "s"
+            else
+               print
+            end if
+            print "</td></tr><tr><td>"
+            if RecToChange.Anon and GetObjectFlags(OBJECTID_MASTER_SYSOP) = 0 then RecToChange.PostedBy = "Anonymous"
+            print "Posted By  : ";Trim(UpperLower(RecToChange.PostedBy));
+            if RecToChange.InterBBS then
+               print " On ";RecToChange.FromBBS;"</td><td>";DateString(RecToChange.DatePosted,"MMM d, yy");")"
+            else
+               print "</td><td>";DateString(RecToChange.DatePosted,"MMM d, yy")
+            end if
+            print "</td></tr></table><br><table border=0><tr><td width=100%>"
+            print RecToChange.Question
+            print "<br><center><i><small>(Change Vote)</small></i></center></td>"
+            print "</tr></table></center><br><center><table><FORM METHOD=""POST"" ACTION=""html-PSVote"">"
+            print "<input type=""hidden"" name=""DoChangeVote"" value=""1"">"
+            print "<input type=""hidden"" name=""Booth"" value=""";VoteToChange;""">"
+            do
+               inc(Counter)
+               if Counter = 27 then exit do
+               if trim(RecToChange.Choices(counter)) = "" then exit do
+               if counter = UserVote then
+                  print "<input name=""Vote"" type=""radio"" CHECKED value=""";Counter;"""><font color=blue>";RecToChange.Choices(counter);"</font><br>"
+               else
+                  print "<input name=""Vote"" type=""radio"" value=""";Counter;""">";RecToChange.Choices(counter);"<br>"
+               end if
+            loop
+            print "<br><center><input type=""submit"" value=""Change Vote""></center></form></table></center>"
+            print "<hr>"
+                     
+            print
+
+         else
+            print "<center><b>Sorry, The maximum number of votes has already been reached.</b></center>"
+         end if
+   else
+      print "<center><b>You must vote on this booth before you can change your vote.</b></center>"
+   end if
+end sub
+
+sub Results
+   dim ResultsTempCounter as integer = 0
+   dim ResultsTempBooth as BoothIndex
+   dim ResultsPageCounter as byte = 0
+   dim ResultsFileLen as integer
+
+   Print "<CENTER><TABLE BORDER>"
+   print "<TR><B><TD BGCOLOR=TEAL>Num</TD><TD BGCOLOR=TEAL>Description</TD><TD BGCOLOR=TEAL>Author</TD><TD BGCOLOR=TEAL>Votes</TD><TD BGCOLOR=TEAL>Max Votes</TD></TR>"
+
+   do until ResultsTempCounter = CountBooths
+      inc(ResultsTempCounter)
+      inc(ResultsPageCounter)
+
+      open "wc:\data\PSVote.dat" for random as #1  len=len(BoothIndex)
+         get #1, ResultsTempCounter, ResultsTempBooth
+         ResultsFileLen = lof(1)
+      close #1
+
+      ResultsTempBooth.PostedBy = UpperLower(ResultsTempBooth.PostedBy)
+      
+      if ResultsTempBooth.Anon and GetObjectFlags(OBJECTID_MASTER_SYSOP) = 0 then ResultsTempBooth.PostedBy = "Anonymous"
+      if ResultsTempBooth.Anon and GetObjectFlags(OBJECTID_MASTER_SYSOP) then ResultsTempBooth.PostedBy = ResultsTempBooth.PostedBy + " (A)"
+      if ResultsTempBooth.InterBBS then ResultsTempBooth.PostedBy = ResultsTempBooth.PostedBy + " (I)"
+         print "<TR><B><TD>";ResultsTempCounter;")</TD><TD><A HREF=""html-psvote?SeeResults=1&booth=";ResultsTempCounter;""">";pad(ResultsTempBooth.Header, 33);"</A></TD><TD>";
+         print left(pad(ResultsTempBooth.PostedBy,24),24);"</TD><TD>";pad(FormatNumber(ResultsTempBooth.TotalVotes),8);"</B>";
+         if ResultsTempBooth.VotesAloud > 0 then 
+            print "</TD><TD>";str(ResultsTempBooth.VotesAloud);"</A></TD></TR>"
+         else
+            print "</TD><TD>";"Unlimited";"</A></TD></TR>"
+         end if
+   loop
+   print "</TABLE></CENTER><HR>"
+end sub
+
+sub CreateGraph
+   dim CreateGraphRec as BoothIndex
+   dim CreateGraphBoothNum as integer = val(GetParamStr(URL, "booth"))
+   dim CreateGraphChoiceCounter as byte = 0
+   dim UserVote as byte = GetUserVote(CreateGraphBoothNum)
+
+   if CreateGraphBoothNum > 0 and CreateGraphBoothNum <= CountBooths then
+      open "wc:\data\PSVote.dat" for random as #1  len=len(BoothIndex)
+         get #1, CreateGraphBoothNum, CreateGraphRec
+      close #1
+   
+      print "<CENTER><FONT SIZE=5>";CreateGraphRec.Header;"</FONT></CENTER>"
+      print "<CENTER>";CreateGraphRec.Question;"</CENTER>"
+      print "<CENTER><HR WIDTH=20%></CENTER>"
+      
+      if CreateGraphRec.InterBBS then
+         print "<CENTER>Posted by ";UpperLower(CreateGraphRec.PostedBy);" from ";CreateGraphRec.FromBBS;" on ";DateString(CreateGraphRec.DatePosted,"MMM d, yyyy");"</CENTER>"
+      else
+         print "<CENTER>Posted by ";UpperLower(CreateGraphRec.PostedBy);" on ";DateString(CreateGraphRec.DatePosted,"MMM d, yyyy");"</CENTER>"
+      end if
+      print "<CENTER>Total Votes: ";CreateGraphRec.TotalVotes;"</CENTER>"
+      Print "<CENTER><TABLE BORDER>"
+      print "<TR><B><TD BGCOLOR=TEAL>Choice</TD><TD BGCOLOR=TEAL>Votes";chr(32);chr(32);"</TD><TD BGCOLOR=TEAL>Graph</TD></TR>"
+      
+      do
+         inc(CreateGraphChoiceCounter)
+         if CreateGraphChoiceCounter > 26 then exit do
+         if trim(CreateGraphRec.Choices(CreateGraphChoiceCounter)) = "" then exit do
+         if CreateGraphChoiceCounter = UserVote then
+            if CreateGraphRec.Results(CreateGraphChoiceCounter) > 0 then
+               print "<TR BGCOLOR=BLUE><B><TD><FONT COLOR=WHITE>";CreateGraphRec.Choices(CreateGraphChoiceCounter);"</FONT></TD><TD><FONT COLOR=WHITE>";
+               print CreateGraphRec.Results(CreateGraphChoiceCounter);"</FONT></TD><TD WIDTH=100><TABLE BGCOLOR=WHITE HEIGHT=100%><TR><TD WIDTH=";
+               print str(100 * CreateGraphRec.Results(CreateGraphChoiceCounter) / CreateGraphRec.TotalVotes);">&nbsp;</TD></TR></TABLE></TD></TR>"
+            else
+               print "<TR><B><TD>";CreateGraphRec.Choices(CreateGraphChoiceCounter);"</TD><TD>";CreateGraphRec.Results(CreateGraphChoiceCounter);"</TD><TD WIDTH=100><TABLE HEIGHT=100%><TR><TD WIDTH=";
+               print str(100 * CreateGraphRec.Results(CreateGraphChoiceCounter) / CreateGraphRec.TotalVotes);">&nbsp;</TD></TR></TABLE></TD></TR>"
+
+            end if
+         else
+            if CreateGraphRec.Results(CreateGraphChoiceCounter) > 0 then
+               print "<TR><B><TD>";CreateGraphRec.Choices(CreateGraphChoiceCounter);"</TD><TD>";CreateGraphRec.Results(CreateGraphChoiceCounter);"</TD><TD WIDTH=100><TABLE BGCOLOR=PURPLE HEIGHT=100%><TR><TD WIDTH=";
+               print str(100 * CreateGraphRec.Results(CreateGraphChoiceCounter) / CreateGraphRec.TotalVotes);">&nbsp;</TD></TR></TABLE></TD></TR>"
+            else
+               print "<TR><B><TD>";CreateGraphRec.Choices(CreateGraphChoiceCounter);"</TD><TD>";CreateGraphRec.Results(CreateGraphChoiceCounter);"</TD><TD WIDTH=100><TABLE HEIGHT=100%><TR><TD WIDTH=";
+               print str(100 * CreateGraphRec.Results(CreateGraphChoiceCounter) / CreateGraphRec.TotalVotes);">&nbsp;</TD></TR></TABLE></TD></TR>"
+
+            end if
+         end if
+      loop
+      Print "</TABLE></CENTER>"
+      print "<center>"
+      if CreateGraphBoothNum > 1 then
+         Print "<font size=2><i><a href=""html-psvote?SeeResults=1&booth=";CreateGraphBoothNum - 1;""">[Prev Booth]</a></font>"
+      end if
+      if CreateGraphBoothNum < CountBooths then
+         Print "<font size=2><i><a href=""html-psvote?SeeResults=1&booth=";CreateGraphBoothNum + 1;""">[Next Booth]</a></font>"
+      end if
+      print "</center>"
+      
+      Print "<BR><HR>"
+   else
+      print "<center><b>Invalid booth.</b></center>"
+   end if
+end sub
+
+function CheckRecOk(PackToCheck as String) as boolean
+   dim TempCheckRecOk as boolean = FALSE
+   dim CheckRecOkCounter as integer = 0
+   dim CheckRecOkRecord as NodeRecord
+   
+   open "wc:\data\psvibbs.dat" for random as #1  len=len(NodeRecord)
+      do while not eof(1)
+         inc(CheckRecOkCounter)
+         get #1, CheckRecOkCounter, CheckRecOkRecord
+         if ucase(CheckRecOkRecord.DomainName) = ucase(PackToCheck) then 
+            if CheckRecOkRecord.RecOk then
+               TempCheckRecOk = TRUE
+            end if
+         end if
+      loop
+   close #1
+   
+CheckRecOk = TempCheckRecOk
+end function
+
+sub ImportPacket(PacketToToss as string, FromWho as TMsgHeader)
+   dim PacketInfo as BoothIndex 
+   
+   select case FromWho.Subject
+      case "PS-Vote Packet (Booth)"
+         if CountBooths < cf.MaxBooths or cf.MaxBooths = 0 then
+            open PacketToToss for random as #1 len=len(BoothIndex)
+               Get #1, 1, PacketInfo
+            close #1
+            if PacketInfo.PassKey = 80744916 then
+               dim AnotherNewFromDomain as string = PacketInfo.FromDomain
+               if CheckRecOk(AnotherNewFromDomain) then
+                  UpdateDB(CountBooths + 1, PacketInfo)
+               end if
+            end if
+         end if
+      case "PS-Vote Packet (Vote)"
+         dim VoteInfo as ExportVote
+         
+            open PacketToToss for random as #1 len=len(ExportVote)
+               Get #1, 1, VoteInfo
+            close #1
+            
+            if VoteInfo.PassKey = 234185 then
+               Dim NewFromDomain as string = VoteInfo.FromDomain
+               if CheckRecOk(NewFromDomain) then
+                  dim LookupBoothByHeader as BoothIndex
+                  dim LookupBoothByHeaderCounter as integer = 0
+
+                  open "wc:\data\PSVote.dat" for random as #1  len=len(BoothIndex)
+                     do while not eof(1)
+                        inc(LookupBoothByHeaderCounter)
+                        get #1, LookupBoothByHeaderCounter, LookupBoothByHeader
+                        if LookupBoothByHeader.Header = VoteInfo.Header then exit do
+                     loop
+                  close #1
+                  dim MarkVotedChoice as string = VoteInfo.VoteLetter
+                  if LookupBoothByHeader.Choices   (asc(VoteInfo.VoteLetter) - 64) <> "" then
+                     inc(LookupBoothByHeader.TotalVotes)
+                     inc(LookupBoothByHeader.Results((asc(VoteInfo.VoteLetter) - 64)))
+                     UpdateDB(LookupBoothByHeaderCounter, LookupBoothByHeader)
+                     MarkVoted(LookupBoothByHeaderCounter, MarkVotedChoice, -1, VoteInfo.NameOfVoter + " (" + VoteInfo.FromDomain + ")")
+                  end if
+               end if
+            end if
+   end select
+end sub
+
+sub ExportPacket(BoothToExport as BoothIndex)
+   dim LookupNode as NodeRecord
+   dim NodeCounter as integer = 0
+   dim NodeMsg as TMsgHeader
+   dim MsgText as string
+
+   open "wc:\data\psvibbs.dat" for random as #1 len=len(NodeRecord)
+
+   dim now as DateTime
+   GetCurrentDateTime(now)
+   
+   BoothToExport.InterBBS = TRUE
+   BoothToExport.FromDomain = cf.LocalDomain
+   BoothToExport.FromBBS = Makewild.BBSName
+   BoothToExport.PassKey = 80744916
+
+   do while not eof(1)
+      inc(NodeCounter)
+      get #1, NodeCounter, LookupNode
+      if LookupNode.SendOk then
+         Nodemsg.From.Name = LookupNode.SysopAddress
+         Nodemsg.To.Name = "PS-VOTE@" + Trim(LookupNode.DomainName)
+         Nodemsg.Subject = "PS-Vote Packet (Booth)"
+         Nodemsg.Conference = 0
+         Nodemsg.Private = TRUE
+         Nodemsg.Attachment = "psvpack.dat"
+         MsgText = "PS-Vote 1.0B InterBBS Voting Packet.  ID: " + str(GetHighMessageNumber(0) + 1)
+         if AddMessage(Nodemsg, MsgText) then
+            open "wc:\conf(0)\message("+str(Nodemsg.Id)+")\attach" for random as #2 len=len(BoothIndex)
+               put #2, 1, BoothToExport
+            close #2
+         end if
+      end if
+   loop
+   close #1
+end sub
+
+sub ExportVote(BoothToExportVote as BoothIndex, ChoiceToSend as string)
+   dim LookupNode as NodeRecord
+   dim NodeCounter as integer = 0
+   dim NodeMsg as TMsgHeader
+   dim MsgText as string
+   dim WhatToExport as ExportVote
+
+   open "wc:\data\psvibbs.dat" for random as #1 len=len(NodeRecord)
+
+   dim now as DateTime
+   GetCurrentDateTime(now)
+   
+   WhatToExport.Header = BoothToExportVote.Header
+   WhatToExport.VoteLetter = ChoiceToSend
+   WhatToExport.NameOfVoter = user.info.name
+   WhatToExport.FromDomain = cf.LocalDomain
+   WhatToExport.PassKey = 234185
+   
+   do while not eof(1)
+      inc(NodeCounter)
+      get #1, NodeCounter, LookupNode
+      if LookupNode.SendOk then
+         Nodemsg.From.Name = LookupNode.SysopAddress
+         Nodemsg.To.Name = "PS-VOTE@" + Trim(LookupNode.DomainName)
+         Nodemsg.Subject = "PS-Vote Packet (Vote)"
+         Nodemsg.Conference = 0
+         Nodemsg.Private = TRUE
+         Nodemsg.Attachment = "psvpack.dat"
+         MsgText = "PS-Vote 1.0B InterBBS Voting Packet.  ID: " + str(GetHighMessageNumber(0) + 1)
+         if not AddMessage(Nodemsg, MsgText) then
+            cls
+            Print "Error<BR><BR>"
+            print
+            print "There was an error adding a message to the Wildcat! Message Database.<BR>"
+            print "Please contact your sysop."
+         else
+            open "wc:\conf(0)\message("+str(Nodemsg.Id)+")\attach" for random as #2 len=len(ExportVote)
+               put #2, 1, WhatToExport
+            close #2
+         end if
+      end if
+   loop
+   close #1
+end sub
+
+sub NewBooth
+      dim ChoiceCounter as byte = 0
+      dim LocalOnly as boolean = FALSE
+      
+      if CountBooths >= cf.MaxBooths and cf.MaxBooths > 0 then
+         print "<center><b>The maximum number of booths set by the system has already been reached.</b></center>"
+         exit sub
+      end if
+      
+      booth.RecordID = user.info.id
+      booth.PostedBy = user.info.name
+               
+      Print "<center><b>New Booth</b></center>"
+      print "<br>"
+      if cf.InterBBSMode then
+         print "<center><i>Remember, this booth will be passed on to </i><b>";CountOtherBBSs;"</b><i> other BBSs unless you select Local Only Booth.</i></center>"
+      end if
+
+      print "<CENTER>"
+      print "<FORM METHOD=""POST"" ACTION=""html-PSVote"">"
+      print "<input type=hidden name=""AddBooth"" value=""1"">"
+      print "<table><tr><td>Header</td><td><input NAME=""Header"" size=30 maxlength=30></input></td></tr><br>"
+      print "<tr><td>Question</td><td><input NAME=""Question"" size=30 maxlength=240></input></td></tr></table><br><br>"
+      print "<center><table>"
+   
+      do while ChoiceCounter < 26
+         inc(ChoiceCounter)
+         if ChoiceCounter / 2 <> int(ChoiceCounter / 2) then 
+            print "</tr><tr>";
+         end if
+         print "<td>Choice ";chr(64 + ChoiceCounter);"</td><td><input NAME=""Choice";str(ChoiceCounter);""" size=30 maxlength=30></input></td>"
+      loop
+      print "</table><hr><center><table border=0>"
+      
+      if cf.AllowAnon then
+         print "<tr><td>Post Anonymously?</td><td><input type=""checkbox"" name=""Anon""></td></tr>"
+      end if
+
+      if cf.AllowAdd then
+         print "<tr><td>Allow others to add choices?</td><td><input type=""checkbox"" name=""AddOk""></td></tr>"
+      end if
+
+      if cf.AllowChange then
+         print "<tr><td>Allow others to change their votes?</td><td><input type=""checkbox"" name=""ChangeOk""></td></tr>"
+      end if
+      
+      if cf.InterBBSMode then
+         print "<tr><td>Local Only Booth?</td><td><input type=""checkbox"" name=""LocalOnly""></td></tr>"
+      end if
+      
+      if cf.MaxVotes <= 0 then
+         print "<tr><td>Total votes allowed (Default Is Unlimited)</td><td><input name=""VotesAllowed"" size=4 maxlength=5></td></tr>"
+      end if
+
+      print "<tr><td><INPUT TYPE=""submit"" VALUE=""Submit Booth""></td></tr></table></center><br>"
+      print "</FORM></CENTER><BR>"
+      
+end sub
+
+function CheckBox(ReturnCheck as string) as boolean
+   if ucase(ReturnCheck) = "ON" then
+      CheckBox = true
+   else
+      CheckBox = false
+   end if
+end function
+
+sub AddBooth
+   dim ErrorCode as boolean = FALSE //Is there an error with some of the information?
+   dim ChoiceReader as byte = 0 //This is used to reading in all the choices
+   dim LocalOnly as boolean = FALSE //Will this booth be passed around to other BBSs in the network?
+
+   booth.RecordID = user.info.id //Stores who posted this booth
+   booth.PostedBy = user.info.name //And their name, so I don't have to keep reading the WC user DB
+   booth.Anon = CheckBox(GetParamStr(URL, "Anon")) //Was the Anonymous checkbox selected?
+   booth.Header = GetParamStr(URL, "Header") //What was the header for the booth?
+   booth.Question = GetParamStr(URL, "Question") //What was the actual question for the booth?
+   if cf.InterBBSMode then LocalOnly = CheckBox(GetParamStr(URL, "LocalOnly")) //If the BBS participates in an InterBBS network, then set the LocalOnly flag
+   for ChoiceReader = 1 to 26 //This reads in all the choices, A through Z
+      if trim(GetParamStr(URL, "Choice" + str(ChoiceReader))) = "" then exit for
+      booth.Choices(ChoiceReader) = GetParamStr(URL, "Choice" + str(ChoiceReader))
+   next
+   booth.AddOk = CheckBox(GetParamStr(URL, "AddOk")) //Is it okay for other users to add their own choices?
+   booth.VotesAloud = val(GetParamStr(URL, "VotesAllowed")) //How many users can vote on this booth?
+   booth.AllowChange = CheckBox(GetParamStr(URL, "ChangeOk")) //Is it okay for users to change their votes, once they've already voted?
+   
+   if cf.MaxVotes > 0 then booth.VotesAloud = cf.MaxVotes //If the sysop has overridden the Voted Allowed field, pay attention to that
+
+   if BadAts(GetParamStr(URL, "Header")) or BadAts(GetParamStr(URL, "Question")) then //Beware those fools who put stupid things like @CLS@ in the booth somewhere
+      print "<center><b>Error: You have either used bad language or illegal characters.  Please try again.</b></center>"
+      ErrorCode = true
+   end if
+   
+   for ChoiceReader = 1 to 26 //And check all the choices for @ codes too.
+      if BadAts(GetParamStr(URL, "Choice" + str(ChoiceReader))) then
+         print "<center><b>Error in choice ";ChoiceReader;": You have either used bad language or illegal characters.  Please try again.</b></center>"
+         ErrorCode = true
+      end if
+   next ChoiceReader
+   
+   if trim(booth.Header) = "" then //Did they put anything for the header?
+      print "<center><b>Error: You must have a header.</b></center>"
+      ErrorCode = true
+   end if
+
+   if trim(booth.Question) = "" then //Did they put anything for the question?
+      print "<center><b>Error: You must have a question.</b></center>"
+      ErrorCode = true
+   end if
+   
+   if trim(Booth.Choices(1)) = "" then //Do they have at least one choice to vote on?
+      print "<center><b>Error: You must have at least one choice.</b></center>"
+      ErrorCode = true
+   end if
+   
+   if not ErrorCode then //Okay, if there are any errors, don't write the booth to the database
+      print "<center><b>Thank you for adding your booth.</b></center>"
+      dim now as DateTime
+      GetCurrentDateTime(now)
+      booth.DatePosted = now
+      WriteDB
+      if cf.InterBBSMode and not LocalOnly then ExportPacket(Booth)
+   end if
+end sub
+
+sub VoteSub
+   dim BoothToVote as integer
+   dim SelectedBooth as BoothIndex
+   dim Counter as byte = 0
+   dim Vote as string
+   dim VoteString as string
+           
+      BoothToVote = val(GetParamStr(URL, "booth"))
+      
+      if NotVoted(BoothToVote) then
+         open "wc:\data\PSVote.dat" for random as #1  len=len(BoothIndex)
+            get #1, BoothToVote, SelectedBooth
+         close #1
+      
+         if SelectedBooth.TotalVotes < SelectedBooth.VotesAloud or SelectedBooth.VotesAloud = 0 then
+            print "<center><table border>"
+            print "<tr><td>";SelectedBooth.Header;"</td><td>";FormatNumber(SelectedBooth.TotalVotes);" Total Vote";
+            if SelectedBooth.TotalVotes <> 1 then 
+               print "s"
+            else
+               print
+            end if
+            print "</td></tr><tr><td>"
+            if SelectedBooth.Anon and GetObjectFlags(OBJECTID_MASTER_SYSOP) = 0 then SelectedBooth.PostedBy = "Anonymous"
+            print "Posted By  : ";Trim(UpperLower(SelectedBooth.PostedBy));
+            if SelectedBooth.InterBBS then
+               print " On ";SelectedBooth.FromBBS;"</td><td>";DateString(SelectedBooth.DatePosted,"MMM d, yy");")"
+            else
+               print "</td><td>";DateString(SelectedBooth.DatePosted,"MMM d, yy")
+            end if
+            print "</td></tr></table><br><table border=0><tr><td><center>"
+            print SelectedBooth.Question
+            print "</center></td></tr></table></center><br><center><table><FORM METHOD=""POST"" ACTION=""html-PSVote"">"
+            print "<input type=""hidden"" name=""DoVote"" value=""1"">"
+            print "<input type=""hidden"" name=""Booth"" value=""";BoothToVote;""">"
+            do
+               inc(Counter)
+               if Counter = 27 then exit do
+               if trim(SelectedBooth.Choices(counter)) = "" then exit do
+               print "<input name=""Vote"" type=""radio"" value=""";Counter;""">";SelectedBooth.Choices(counter);"<br>"
+            loop
+            print "<br><center><input type=""submit"" value=""Vote""></center></form></table></center>"
+                     
+            print
+
+         else
+            print "<center><b>Sorry, The maximum number of votes has already been reached.</b></center>"
+         end if
+      else
+         Print "<center><b>Already Voted!</b></center>"
+      end if
+end sub
+
+sub ProcVote
+   dim ProcVoteBooth as integer = val(GetParamStr(URL, "Booth"))
+   dim ProcVoteChoice as byte = val(GetParamStr(URL, "Vote"))
+   dim SelectedBooth as boothindex
+   
+   if ProcVoteChoice <= 26 then
+      if ProcVoteBooth <= CountBooths then
+         dim ProcVoteFile as integer = open "wc:\data\psvote.dat" for random len=len(BoothIndex)
+            get #ProcVoteFile, ProcVoteBooth, SelectedBooth
+         close #ProcVoteFile
+         
+         if trim(SelectedBooth.Choices(ProcVoteChoice)) <> "" then
+            inc(SelectedBooth.Results(ProcVoteChoice))
+            inc(SelectedBooth.TotalVotes)
+            UpdateDB(ProcVoteBooth, SelectedBooth)
+            MarkVoted(ProcVoteBooth, chr(ProcVoteChoice + 64), 0, "")
+            ExportVote(SelectedBooth, chr(ProcVoteChoice + 64))
+            print "<center><b>Thank you for voting!<b></center>"
+            print "<center><b><a href=""html-psvote?SeeResults=1&booth=";ProcVoteBooth;""">See Results</a>"
+         else
+            print "<center><b>That choice is not valid, please try again.</b></center>"
+         end if
+      else
+         print "<center><b>That booth does not exist.</b></center>"
+      end if
+   else
+      print "<center><b>That choice is not valid, please try again.</b></center>"
+   end if
+end sub
+
+sub AboutBox
+   print "<center><b>About PS-Vote</b></center><br>"
+   print "<center>PS-Vote 1.2 for Wildcat! Interactive Net Server</center>"
+   print "<center>&copy; 1997 Mike Christensen All Rights Reserved</center>"
+   print "<br>"
+   print "<center>Programmed By     : Mike Christensen<br>"
+   print "<center>Registration Cost : $15<br>"
+   print "<br>"
+   print "<center>Support-<br>"
+   print "Telnet - <a href=""telnet://bbs.hjwbbs.com"">bbs.hjwbbs.com</a><br>"
+   print "FTP - <a href=""ftp://ftp.hjwbbs.com"">ftp.hjwbbs.com</a><br>"
+   print "WWW - <a href=""http://www.hjwbbs.com"">www.hjwbbs.com</a><br>"
+   print "Email - <a href=""mailto:hiawatha@znet.com"">hiawatha@znet.com</a> or <a href=""mailto:hiawatha@hjwbbs.com"">hiawatha@hjwbbs.com</a><br>"
+   print "BBS - (619) 447-4332 33.6k or (619) 447-4492 33.6k<br>"
+   print "<br>"
+   print "PS-Vote is currently running on ";makewild.bbsname
+   print "<br>"
+end sub
+
+function CheckNewBooths as boolean
+   dim CheckCounter as integer = 0
+   dim CheckBooth as BoothIndex
+   
+   open "wc:\data\PSVote.dat" for random as #1  len=len(BoothIndex)
+            
+   do while not eof(1)
+      inc(CheckCounter)
+      get #1, CheckCounter, CheckBooth
+      if NotVoted(CheckCounter) then
+         if CheckBooth.TotalVotes < CheckBooth.VotesAloud or CheckBooth.VotesAloud = 0 then
+            CheckNewBooths = TRUE
+         end if
+      end if
+   loop
+   close #1
+end function
+
+sub ListIBBS
+    IBBSCounter = 0
+                   
+    open "wc:\data\psvibbs.dat" for random as #1 len=len(NodeRecord)
+        if lof(1) = 0 then
+            print "<center><b>No BBSs Defined</b></center>"
+         else
+            print "<center><b>Defined Remote BBSs</b></center>"
+            print "<table border>"
+            do while not eof(1)
+               inc(IBBSCounter)
+               get #1, IBBSCounter, Node
+               print "<tr><td>";IBBSCounter;"</td><td>";Node.BBSName;"</td><td><a href=""mailto:";Node.SysopAddress;""">";Node.SysopAddress;"</a></td>";
+               print "<td>";Node.Location;"</td>"
+               print "<td>";Node.DomainName;"</td>"
+               print "<td>Send ";DispYesNo(Node.SendOk);"</td>"
+               print "<td>Rec ";DispYesNo(Node.RecOk);"</td>"
+               print "</tr>"
+            loop
+            print "</table><hr>"
+        end if
+   close #1
+end sub
+
+sub CheckInbound(StartOver as boolean)
+ dim message as TMsgHeader
+ dim MsgCounter as integer = cf.HighMsg - 5
+
+ if StartOver = TRUE then MsgCounter = 0
+
+ do while MsgCounter <= GetHighMessageNumber(0)
+    SearchMessageById(0, GetMsgIdFromNumber(0,MsgCounter), message)
+    if message.Attachment <> "" and message.To.name = "PS-VOTE" and NOT message.Received then
+       ImportPacket("wc:\conf("+str(message.Conference)+")\message("+str(message.Id)+")\attach", message)
+       MarkMessageRead(Message)
+       DeleteMessage(Message)
+    end if
+    inc(MsgCounter)
+ loop
+ cf.HighMsg = GetHighMessageNumber(0)
+ WriteConfig
+Delay .7
+end sub
+
+sub SysopMenu
+
+   dim ConfigChoice as string * 1
+   
+   print "<center><b>PS-Vote Configuration Mananger</b></center><br>"
+
+   print "<center><form method=""POST"" action=""html-psvote""><table border=1 width=50%>"
+   print "   <input type=hidden name=Reconfig value=1>"
+   print "   <tr><td>Bar Graph Character</td><td><center><input size=20 maxsize=3 type=""text"" name=BarGraphChar value=";cf.GraphChar;"></td></tr>"
+   
+   if cf.AllowAnon then
+      print "   <tr><td>Allow Anonymous Booths</td><td>   Yes<input type=""radio"" name=AllowAnon CHECKED>No<input type=""radio"" name=AllowAnon></td></tr>"
+   else
+      print "   <tr><td>Allow Anonymous Booths</td><td>   Yes<input type=""radio"" name=AllowAnon>No<input type=""radio"" name=AllowAnon CHECKED></td></tr>"   
+   end if
+
+   if cf.AllowAdd then
+      print "   <tr><td>Allow Users To Add Choices</td><td>   Yes<input type=""radio"" name=AllowAdd CHECKED>No<input type=""radio"" name=AllowAdd></td></tr>"
+   else
+      print "   <tr><td>Allow Users To Add Choices</td><td>   Yes<input type=""radio"" name=AllowAdd>No<input type=""radio"" name=AllowAdd CHECKED></td></tr>"   
+   end if
+
+   if cf.AllowChange then
+      print "   <tr><td>Allow Users To Change Votes</td><td>   Yes<input type=""radio"" name=AllowChange CHECKED>No<input type=""radio"" name=AllowChange></td></tr>"
+   else
+      print "   <tr><td>Allow Users To Change Votes</td><td>   Yes<input type=""radio"" name=AllowChange>No<input type=""radio"" name=AllowChange CHECKED></td></tr>"   
+   end if
+
+   print "   <tr><td>Maximum Votes Per Booth</td><td><center><input size=20 maxvote=6 type=""text"" name=MaxVotes value=";cf.MaxVotes;"></td></tr>"
+   print "   <tr><td>Maximum Booths Allowed</td><td><center><input size=20 maxvote=6 type=""text"" name=MaxBooths value=";cf.MaxBooths;"></td></tr>"
+   print "   <tr><td>Who Is Online Program</td><td><center><input size=20 type=""text"" name=WhoProg value=";cf.WhoOnline;"></td></tr>"
+   print "   <tr><td>Who Is Online Parameters</td><td><center><input size=20 type=""text"" name=WhoParam value=";cf.WhoOnlineParam;"></td></tr>"
+   print "   <tr><td>Last User To Use PS-Vote</td><td><center><input size=20 type=""text"" name=LastUser value=";cf.LastUser;"></td></tr></table><br>"
+   print "   <table border=0><tr><td><input type=""submit"" value=""Save""></td><td><input type=""reset"" value=""Restore Previous""></td></tr>"
+   print "</table></center></form>"
+   print "<hr>"
+end sub
+
+sub SaveSettings
+   dim SaveSettingsError as boolean = FALSE
+   
+   if Val(GetParamStr(URL, "BarGraphChar")) > 0 and Val(GetParamStr(URL, "BarGraphChar")) < 255 then
+      cf.GraphChar = Val(GetParamStr(URL, "BarGraphChar"))
+   else
+      Print "<center><b>Error: Invalid Bar Graph Character.</b></center>"
+      SaveSettingsError = TRUE
+   end if
+   
+   cf.AllowAnon = CheckBox(GetParamStr(URL, "AllowAnon"))
+   cf.AllowAdd = CheckBox(GetParamStr(URL, "AllowAdd"))
+   cf.AllowChange = CheckBox(GetParamStr(URL, "AllowChange"))
+   
+   if Val(GetParamStr(URL, "MaxVotes")) >= 0 then
+      cf.MaxVotes = Val(GetParamStr(URL, "MaxVotes"))
+   else
+      Print "<center><b>Error: Invalid number of Maximum Votes.</b></center>"
+      SaveSettingsError = TRUE
+   end if
+   
+   if Val(GetParamStr(URL, "MaxBooths")) >= 0 then
+      cf.MaxBooths = Val(GetParamStr(URL, "MaxBooths"))
+   else
+      Print "<center><b>Error: Invalid number of Maximum Booths.</b></center>"
+      SaveSettingsError = TRUE
+   end if
+   
+   cf.WhoOnline = GetParamStr(URL, "WhoProg")
+   cf.WhoOnlineParam = GetParamStr(URL, "WhoParam")
+   cf.LastUser = GetParamStr(URL, "LastUser")
+   
+   if not SaveSettingsError then
+      WriteConfig
+      Print "<center><b>New configuration was saved.</b></center>"
+   else
+      Print "<center><b>New configuration was not saved.</b></center>"
+   end if
+end sub
+
+sub Stats
+   Dim StatsGetter as BoothIndex
+   Dim StatsCounter as integer = 0
+   dim NumAnon as integer
+   dim NumIBBS as integer
+   dim TotalVotes as integer
+   
+   
+   open "wc:\data\PSVote.dat" for random as #1  len=len(BoothIndex)
+      do while not eof(1)
+         inc(StatsCounter)
+         get #1, StatsCounter, StatsGetter
+         if StatsGetter.Anon then inc(NumAnon)
+         if StatsGetter.InterBBS then inc(NumIBBS)
+         TotalVotes = TotalVotes + StatsGetter.TotalVotes
+      loop
+   close #1
+   
+   Print "<center><b>PS-Vote Statistics</b></center><center><table border>"
+   Print "<tr><td>Total Booths</td><td>";FormatNumber(CountBooths);"</td></tr>"
+   Print "<tr><td>Anonymous Booths</td><td>";FormatNumber(NumAnon);"</td></tr>"
+   Print "<tr><td>InterBBS Booths</td><td>";FormatNumber(NumIBBS);"</td></tr>"
+   Print "<tr><td>Total Votes</td><td>";FormatNumber(TotalVotes);"</td></tr>"
+   Print "<tr><td>Last User</td><td>";cf.LastUser;"</td></tr>"
+   Print "<tr><td>Total Uses</td><td>";FormatNumber(cf.TotalUses);"</td></tr>"
+   Print "<tr><td>Registered?</td><td>";DispYesNo(Regged);"</td></tr></table></center><br><hr>"
+end sub
+
+//************************************************************************
+//************************************************************************
+//**                                                                    **
+//**   End of subs/Functions                                            **
+//**   Action program starts here!                                      **
+//**                                                                    **
+//************************************************************************
+//************************************************************************
+
+dim SubCounter as integer = 0
+Dim FUrl as integer = Open ParamStr(1) for input
+ReadConfig
+
+   if FUrl > 0 then
+      Input #FUrl, URL
+      Close #FUrl
+   else
+      URL = ParamStr(1)
+   end if
+
+   if GetParamStr(URL, "Header") = "1" then
+      print "<html>"
+      print "   <body bgcolor=black text=white link=white vlink=white>"
+      print "   <center>"
+
+      print " <table width=90% cellspacing=10>"
+      print "   <tr>"
+      print "     <td align=center><img src=""/public/graphics/PurpleLine.jpg""></td>"
+
+      If GetFirstUnvoted = 0 then
+         print "         <td align=center><a href=""html-PSVote?Option=1"" target=Mainscreen onMouseOver=""window.status = 'Select a booth to vote on (There are no new booths)'; return true;""><font size=1 color=white><b>Vote</b></font></a></td>"
+      else
+         print "         <td align=center><a href=""html-PSVote?Option=1"" target=Mainscreen onMouseOver=""window.status = 'Select a booth to vote on (There are new booths)'; return true;""><font size=1 color=white><b>Vote</b></font></a></td>"
+      end if
+      print "         <td align=center><a href=""html-PSVote?Option=2"" target=Mainscreen onMouseOver=""window.status = 'Create a new voting booth'; return true;""><font size=1 color=white><b>New Booth</b></font></a></td>"
+      print "         <td align=center><a href=""html-PSVote?Option=3"" target=Mainscreen onMouseOver=""window.status = 'See the results from an existing booth'; return true;""><font size=1 color=white><b>Results</b></font></a></td>"
+      print "         <td align=center><a href=""html-PSVote?Option=4"" target=Mainscreen onMouseOver=""window.status = 'Display a list of all booths'; return true;""><font size=1 color=white><b>List</b></font></a></td>"
+      print "         <td align=center><a href=""html-PSVote?Option=5"" target=Mainscreen onMouseOver=""window.status = 'Change your vote in a booth'; return true;""><font size=1 color=white><b>Change Vote</b></font></a></td>"
+      print "         <td align=center><a href=""html-PSVote?Option=6"" target=Mainscreen onMouseOver=""window.status = 'See list of other BBSs in this PS-Vote network'; return true;""><font size=1 color=white><b>Other BBSs</b></font></a></td>"
+      print "         <td align=center><a href=""html-PSVote?Option=7"" target=Mainscreen onMouseOver=""window.status = 'See who is online this server'; return true;""><font size=1 color=white><b>Who's Online</b></font></a></td>"
+      print "         <td align=center><a href=""html-PSVote?Option=8"" target=Mainscreen onMouseOver=""window.status = 'See the program statistics'; return true;""><font size=1 color=white><b>Stats</b></font></a></td>"
+      print "         <td align=center><a href=""html-PSVote?Option=9"" target=Mainscreen onMouseOver=""window.status = 'Display program and version information'; return true;""><font size=1 color=white><b>About</b></font></a></td>"
+
+      if GetObjectFlags(OBJECTID_MASTER_SYSOP) then 
+         print "         <td align=center><a href=""html-PSVote?Option=10"" target=Mainscreen onMouseOver=""window.status = 'Access sysop configuration and program settings'; return true;""><font size=1 color=white><b>Sysop Menu</b></font></a></td>"
+      end if
+      
+      print "         <td align=center><a href=""/"" target=_top onMouseOver=""window.status = 'Quit PS-Vote'; return true;""><font size=1 color=white><b>Quit</b></font></a></td>"
+
+      print "     <td align=center><img src=""/public/graphics/PurpleLine.jpg""></td>"
+      print " </tr><tr>"
+      print " </table>"
+      
+      
+      print "      </tr>"
+      print "   </table>"
+      print "   </center>"
+
+      print "   </body>"
+      print "</html>"
+      end
+   end if
+  
+   if GetParamStr(URL, "Header") = "" and GetParamStr(URL, "SeeResults") = "" then    
+      if GetParamStr(URL, "DoVote") = "" and GetParamStr(URL, "VoteBooth") = "" then
+        if GetParamStr(URL, "AddBooth") = "" and GetParamStr(URL, "Option") = "" then
+           if GetParamStr(URL, "Reconfig") = "" and GetParamStr(URL, "ChangeVote") = "" then
+              if GetParamStr(URL, "DoChangeVote") = "" then
+                  print "<html>"
+                  print " <head>"
+                  print " <title>PS-Vote 1.2 by Mike Christensen</title>"
+                  print " </head>"
+                  print " <frameset rows=""50,*"" border=0 frameborder=0 bordercolor=black>"
+                  print "  <frame scrolling=no src=""/code/html-psvote?Header=1"" name=""Header"" marginheight=""0"">"
+                  print "  <frame scrolling=auto src=""/code/html-psvote?Option=0"" name=""Mainscreen"">"
+                  print " </frameset>"
+                  print " <NOFRAMES>"
+                  print " <center>Sorry, this application requires frame support.</center>"
+                  print " </NOFRAMES>"
+                  end
+               end if
+           end if
+        end if
+     end if
+   end if
+
+      if cf.InterBBSMode then 
+         dim UpdateTransferAccount as Tuser
+         dim UpdateTransferAccountDate as DateTime
+         CheckInbound(False)
+         GetCurrentDateTime(UpdateTransferAccountDate)
+        
+         GetUserByName("PS-VOTE", UpdateTransferAccount, 0)
+         UpdateTransferAccount.LastCall = UpdateTransferAccountDate
+         UpdateUser(UpdateTransferAccount)
+      end if
+   
+      print "<html>"
+      print "<title>PS-Vote 1.2 by Mike Christensen</title>"
+
+      if NOT Regged then 
+         print "<SCRIPT LANGUAGE=""LiveScript"">function checkAGE(){if (!confirm(""This version of PS-Vote";
+         print " is unregistered.  Please ask your sysop or\nwebmaster to support ";
+         print "shareware by registering this copy of PS-Vote.\nThe cost is only $15.";
+         print "  Once you register, this annoying message will\ngo away.";
+         print "Thank you!""))history.go(-1);return "" ""}document.writeln";
+         print "(checkAGE())<!--End--> "
+         print "</SCRIPT>"
+      end if
+
+
+      print "<body bgcolor=black text=black link=purple alink=purple vlink=purple>"
+      print "<center><table width=100% border=5 bgcolor=#aa00dd>"
+      print "<td><center><h1><font color=white>PS-Vote 1.2</font></h1>"
+      print "<I><font color=white>&copy; 1997 Mike Christensen All Rights Reserved</font></I></center><BR>"
+      print "<center><tr><td bgcolor=#55aaaa><br>"
+   
+      if user.info.id = 0 then
+         print "<center><b>You must logon to the server to use this program.</b></center>"
+         print "</tr>"
+         print "</tr></td>"
+         print "</tr></table>"
+         print "</tr></html>"
+         end
+      end if
+      
+      if GetParamStr(URL, "Reconfig") = "1" then
+         SaveSettings
+      else
+         if GetParamStr(URL, "SeeResults") = "1" then
+            CreateGraph
+         else
+            if GetParamStr(URL, "DoVote") = "1" then
+               ProcVote
+            else
+               if GetParamStr(URL, "VoteBooth") = "1" then
+                  VoteSub
+               else
+                  if GetParamStr(URL, "AddBooth") = "1" then
+                     AddBooth
+                  else   
+                     if GetParamStr(URL, "ChangeVote") = "1" then
+                        ProcChangeVote
+                     else
+                        if GetParamStr(URL, "DoChangeVote") = "1" then
+                           DoChangeVote
+                        else
+                             select case GetParamStr(URL, "Option")
+                                   case "1"
+                                      Print "<CENTER><FONT SIZE=3 COLOR=TEAL>List of Unvoted Booths</FONT></CENTER><BR>"
+                                      ListBooths(True)
+                                      
+                                   case "2"
+                                      NewBooth
+                                                  
+                                   case "3"
+                                      Print "<CENTER><FONT SIZE=3 COLOR=TEAL>Select A Booth</FONT></CENTER><BR>"
+                                      Results
+                                                   
+                                   case "4"
+                                      Print "<CENTER><FONT SIZE=3 COLOR=TEAL>List Of Booths</FONT></CENTER><BR>"
+                                      ListBooths(False)
+                                                  
+                                   case "5"
+                                      ChangeVote
+        
+                                   case "6"
+                                      if cf.InterBBSMode then ListIBBS
+                                                  
+                                   case "7"
+                                      print "<center><table border=2>"
+                                      dim now as DateTime
+                                      GetCurrentDateTime(now)
+                                      print "<tr><th>Node</th><th>Speed</th><th>Name</th><th>From</th><th>Activity</th></tr>"
+                                      dim count as integer
+                                      count = GetNodeCount
+                                      dim n as integer = 1
+                                      do while n <= count
+                                        dim nc as TNodeConfig
+                                        GetNodeConfig(n, nc)
+                                        if nc.CallTypesAllowed then
+                                          dim ni as TNodeInfo
+                                          GetNodeInfo(n, ni)
+                                          if nc.CallTypesAllowed and (CALLTYPE_DIALUP or CALLTYPE_TELNET) or ni.ConnectionId > 0 then
+                                            SubText(1) = str(n)
+                                            dim display as boolean = True
+                                            if ni.ConnectionId > 0 then
+                                              if ni.NodeStatus > nsDown then
+                                                if ni.NodeStatus > nsUp then
+                                                  SubText(2) = ni.Speed
+                                                  if ni.NodeStatus > nsSigningOn then
+                                                    SubText(3) = ni.User.Name
+                                                    SubText(4) = ni.UserFrom
+                                                    SubText(5) = ni.Activity
+                                                  else
+                                                    SubText(3) = [WhosOnlineLoggingIn "Caller is logging in"]
+                                                    SubText(4) = ""
+                                                    SubText(5) = ""
+                                                  end if
+                                                else
+                                                  SubText(2) = [WhosOnlineOpen "OPEN "]
+                                                  if nc.CallTypesAllowed and CALLTYPE_DIALUP then
+                                                    SubText(3) = [WhosOnlineWaitingForCalls "Waiting For Calls"]
+                                                  else
+                                                    SubText(3) = [WhosOnlineWaitingForTelnet "Waiting For Telnet"]
+                                                  end if
+                                                  SubText(4) = " "
+                                                  SubText(5) = " "
+                                                end if
+                                              else
+                                                SubText(2) = [WhosOnlineDown "OPEN "]
+                                                SubText(3) = [WhosOnlineWaitingForCalls "Waiting For Calls"]
+                                                SubText(4) = " "
+                                                SubText(5) = " "
+                                              end if
+                                            else
+                                              SubText(2) = [WhosOnlineOpen "OPEN "]
+                                              if nc.CallTypesAllowed and CALLTYPE_DIALUP then
+                                                display = False
+                                              else
+                                                SubText(3) = [WhosOnlineWaitingForTelnet "Waiting For Telnet"]
+                                              end if
+                                              SubText(4) = " "
+                                              SubText(5) = " "
+                                            end if
+                                            if display then
+                                              print "<tr><td>@SUB1@</td><td>@SUB2@</td><td>@SUB3@</td><td>@SUB4@</td><td>@SUB5@</td></tr>"   
+                                              inc(n)
+                                            else
+                                              inc(n)
+                                            end if
+                                          else
+                                            inc(n)
+                                          end if
+                                        else
+                                          inc(n)
+                                        end if
+                                      loop
+                                      
+                                      Print "</TABLE></CENTER><BR><HR>"
+                          
+                                                  
+                                   case "8"
+                                      Stats
+                                               
+                                   case "9"
+                                      AboutBox
+                                                  
+                                   case "10"
+                                      SysopMenu
+                                      
+                                   case else
+                                      Print "<center><b>Welcome To PS-Vote 1.2</b></center>"
+                                      print "<center>Please select an option from the menu bar above.</center><br<br><hr>"
+                                      
+                             end select
+                          end if
+                      end if
+                  end if
+               end if
+            end if
+         end if
+      end if
+      print "</tr>"
+      print "</tr></td>"
+      print "</tr></table>"
+      print "</html>"
+                       

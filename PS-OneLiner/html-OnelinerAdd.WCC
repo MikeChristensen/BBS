@@ -1,0 +1,338 @@
+// To Do
+//   New HTML System
+//      - Frames
+//   No Output HTML, goes to .WCX directly in frame (If Sysop, (A) by name, button for config)
+//   HTML Config (HTML number of onliners to display, or all)
+//   HTML Edit OneLiners
+//   Multiple databases
+//   @ Code To <font> conversion
+//   Sysop edit of author, date, time, anon flag
+//   Sysop config menu
+//   Users can delete/edit own oneliners
+//   Bad users list
+//   Bad/good sec level list
+//   Special Time Door Mods
+
+//   Users can create their own OneLiner sections, they become admin of those with config rights
+//      to just that database
+
+
+
+#include "util.wch"
+#include "cmdline.wch"
+#include "DispFile.wch"
+#include "htmlutil.wch"
+
+type OneLiner
+   Entry as string * 120
+   Author as string * 25
+   DateEntered as string * 10
+   TimeEntered as string * 10
+   UserID as integer
+   Anon as boolean
+end type
+
+dim OL as OneLiner
+
+dim Dropper as integer, NumOfLines as integer, Counter as integer
+dim Temp as string
+dim OneLiner(50) as string
+dim OneLinerGot as string * 80, PutAtSigns as integer, HTMLData as string
+dim b As String, x As Integer, y As Integer, z As integer, q As Boolean, SignName as Boolean
+dim StringSearch as Integer, TempString as String, CopyIt as Boolean, DrawRedBall as Boolean
+Dim Header as Integer, Pick as real, NumLines as Integer
+dim BypassFade as boolean = FALSE
+
+dim HTMLOutput as string
+dim OutputHtmlYesNo as string
+dim OutputHtml as boolean
+
+dim LineCount as word
+dim OneLinerEntry(14) as OneLiner
+
+function UpperLower(byval s as string) as string
+  dim t as string
+  dim i as integer = 1
+  do
+    dim w as string = ExtractWord(s, i)
+    if w = "" then exit do
+    if i > 1 then
+      t = t + " "
+    end if
+    t = t + ucase(w(1))+lcase(mid(w, 2))
+    inc(i)
+  loop
+  UpperLower = t
+end function
+
+Sub ReadCfg
+   Open "wc:\data\Oneliner.cfg" for input as #1
+      input #1, HTMLOutput
+      input #1, OutputHtmlYesNo
+      If UCASE(OutputHtmlYesNo) = "Y" then OutputHtml = TRUE else OutputHtml = FALSE  
+   Close #1
+end Sub
+
+function AtCodesToUpper(s as string) as string
+  dim upmode as boolean = False
+  dim n as integer
+  for n = 1 to len(s)
+    if upmode then
+      if s(n) >= "a" and s(n) <= "f" then
+        mid(s, n, 1) = chr(asc(s(n)) - 0x20)
+      end if
+    end if
+    if s(n) = "@" and s(n+3) = "@" then
+      if upmode then
+        upmode = False
+      else
+        upmode = True
+      end if
+    end if
+    if s(n) = "@" and s(n-3) = "@" then
+      if upmode then
+        upmode = False
+      else
+        upmode = True
+      end if
+    end if
+  next
+  AtCodesToUpper = s
+end function
+
+Sub WriteToDataFile
+    dim NextEntry as word
+    dim now as DateTime
+    GetCurrentDateTime(now)
+    
+    OPEN "wc:\DATA\ONELINER.DAT" FOR RANDOM AS #1 len = len(OneLiner)
+    NextEntry = lof(1) + 1
+    
+    OL.Entry = OneLinerGot
+    OL.Author = "Web Surfer"
+    OL.DateEntered = DateString(now)
+    OL.TimeEntered = TimeString(now)
+    OL.UserID = 0
+    
+    put #1, NextEntry, OL
+    Close #1
+End Sub
+
+Function NoBadWords as boolean
+   dim Checker as string
+
+   if Exists("wc:\data\badwords.dat") then
+      open "wc:\data\badwords.dat" for input as #1
+      NoBadWords = TRUE   
+      do while not eof(1)
+         input #1, Checker
+         if instr(ucase(OneLinerGot), trim(ucase(Checker))) > 0 then NoBadWords = FALSE
+      loop
+      close #1
+   else
+      NoBadWords = TRUE
+   end if
+end function
+
+Function StripAts(c As String) as string
+
+    CopyIt=TRUE
+    TempString=""
+    
+    For StringSearch = 1 to LEN(c)
+
+        If MID(c, StringSearch, 1) <> "@" And CopyIt Then 
+            TempString = TempString + MID(c, StringSearch, 1)
+        Else
+            If Not CopyIt And MID(c, StringSearch, 1) = "@" Then
+                CopyIt=TRUE
+            Else
+                CopyIt=FALSE
+            End If
+        End If
+   
+    Next StringSearch
+
+    StripAts = TempString
+
+End Function
+
+Sub WriteToHTMLFile
+    Open HTMLOutput for output as #1
+    dim GetCounter as integer = 0
+    dim HTMLRec as OneLiner
+    
+      print #1, "<html>"
+      print #1, "<head>"
+      print #1, "<TITLE>PS-OneLiner 3.0</TITLE>"
+      print #1, "<META name=""description"" content=""PS-OneLiner 3.0 OneLiner Section"">"
+      print #1, "</head>"
+      print #1, ""
+      print #1, "<BODY STYLE=""margin-top: 0px; margin-left: 0px; margin-right: 0px; margin-bottom:0px"" bgcolor=white text=black link=black vlink=black margin=0>"
+      print #1, "<BASEFONT FACE=""VERDANA,ARIAL,HELVETICA"" COLOR=""000000"">"
+      print #1, ""
+      print #1, "<table border=0 cellspacing=0 cellpadding=0 width=100%>"
+      print #1, "   <tr>"
+      print #1, "      <td align=left>"
+      print #1, "         <table border=0 cellpadding=0 cellspacing=0 width=100%>"
+      print #1, "            <tr>"
+      print #1, "               <td align=left valign=top width=146 height=58 bgcolor=""#000000"">"
+      print #1, "                  <img src=""http://24.0.0.28/impulse9/graphics/BlackLogo.jpg"" width=146 height=58 alt=""Pisces Software"">"
+      print #1, "               </td>"
+      print #1, "               <td align=left valign=top width=""100%"" height=58 bgcolor=""#000000"">&nbsp;</td>"
+      print #1, "               <td align=right valign=top height=58 bgcolor=""#000000"" nowrap>"
+      print #1, "                  <font size=6 color=white face=verdana>PS-OneLiner 3.0</font>&nbsp;"
+      print #1, "               </td>"
+      print #1, "               <td align=left valign=top width=2 height=58 bgcolor=""#000000"">&nbsp;</td>"
+      print #1, "            </tr>"
+      print #1, "            <tr>"
+      print #1, "               <td colspan=5 bgcolor=""#FFFFFF"" width=100% height=1>"
+      print #1, "               </td>"
+      print #1, "            </tr>"
+      print #1, "         </table>"
+      print #1, "      </td>"
+      print #1, "   </tr>"
+      print #1, "   <tr>"
+      print #1, "      <td bgcolor=""#FFFFFF"" height=21 width=""100%"">"
+      print #1, "         <table border=0 cellpadding=0 cellspacing=0 width=""100%"" height=21>"
+      print #1, "            <tr>"
+      print #1, "               <td width=""100%"">"
+      print #1, "                  <TABLE WIDTH=""100%"" CELLPADDING=""0"" CELLSPACING=""0"" BORDER=""0"" bgcolor=white>"
+      print #1, "                     <TR>"
+      print #1, "                        <TD WIDTH=112 ALIGN=""LEFT"" VALIGN=""TOP"" ROWSPAN=""2"">&nbsp</TD>"
+      print #1, "                        <TD COLSPAN=5>&nbsp;</TD>"
+      print #1, "                     </TR>"
+      print #1, "                     <TR>"
+      print #1, "                        <TD VALIGN=TOP>"
+      print #1, "                           <p align=center>"
+      print #1, "                           <TABLE BORDER=0 CELLPADDING=0 CELLSPACING=0 WIDTH=98%>"
+      print #1, "                              <TR>"
+      print #1, "                                 <TD WIDTH=19>&nbsp;</TD>"
+      print #1, "                                 <TD VALIGN=TOP WIDTH=100%>"
+      print #1, "                                    <table width=85%>"
+      print #1, "                                       <tr>"
+      print #1, "                                          <td>"
+      print #1, "                                             <center><FORM METHOD=""GET"" ACTION=""/public/code/html-OneLinerAdd"">"
+      print #1, "                                             <table width=100%>"
+      print #1, "                                                <tr>"
+      print #1, "                                                   <td colspan=2 align=center>"
+      print #1, "                                                      <font face=arial size=2 color=black><b>Please Add Your Own OneLiner:</b></font>"
+      print #1, "                                                   </td>"
+      print #1, "                                                </tr>"
+      print #1, "                                                <tr>"
+      print #1, "                                                   <td align=right>"
+      print #1, "                                                      <input NAME=""OneLinerToAdd"" size=50 maxlength=77></input>"
+      print #1, "                                                   </td>"
+      print #1, "                                                   <td align=left>"
+      print #1, "                                                      <INPUT TYPE=""submit"" VALUE=""Post"">"
+      print #1, "                                                      </FORM>"
+      print #1, "                                                   </td>"
+      print #1, "                                                </tr>"
+      print #1, "                                             </table>"
+      print #1, "                                             </center>"
+      print #1, "                                          </td>"
+      print #1, "                                       </tr>"
+      print #1, "                                    </table>"
+      print #1, ""
+      print #1, "                                    <table width=85%>"
+      print #1, "                                       <tr>"
+      print #1, "                                          <td>"
+      print #1, "                                             <center><hr color=#000099 height=1 width=90%></center><font size=1 face=arial color=black>"
+
+    open "wc:\DATA\ONELINER.DAT" for random as #2 len = len(OneLiner)
+    
+        do while not eof(2)
+        Inc(GetCounter)
+        get #2, GetCounter, HTMLRec
+        dim Stripper as string = HTMLRec.Entry
+        HTMLRec.Entry = StripAts(Stripper)
+        If DrawRedBall Then
+            Print #1, "                                             <CENTER> <IMG SRC=""http://24.0.0.28/impulse9/graphics/whiteball.gif""> </CENTER>"
+        Else
+           DrawRedBall=TRUE
+        End If
+        Print #1, "                                             <CENTER><B>";HTMLRec.Entry;"</B></CENTER>"
+        if HTMLRec.Anon then
+           Print #1, "                                             <CENTER>- Anonymous  (";HTMLRec.TimeEntered;" on ";HTMLRec.DateEntered;")</CENTER>"
+        else
+           Print #1, "                                             <CENTER>- ";UpperLower(HTMLRec.Author);"  (";HTMLRec.TimeEntered;" on ";HTMLRec.DateEntered;")</CENTER>"        
+        end if
+    Loop
+    
+    print #1, "                                          <FORM METHOD=""GET"" ACTION=""/public/code/html-OneLinerAdd"">"
+    print #1, "                                          <table width=100%>"
+    print #1, "                                             <tr>"
+    print #1, "                                                <td colspan=2 align=center>"
+    print #1, "                                                   <font face=arial size=2 color=black><b>Please Add Your Own OneLiner:</b></font>"
+    print #1, "                                                </td>"
+    print #1, "                                             </tr>"
+    print #1, "                                             <tr>"
+    print #1, "                                                <td align=right>"
+    print #1, "                                                   <input NAME=""OneLinerToAdd"" size=50 maxlength=77>"
+    print #1, "                                                </td>"
+    print #1, "                                                <td align=left>"
+    print #1, "                                                   <INPUT TYPE=""submit"" VALUE=""Post"">"
+    print #1, "                                                </td>"
+    print #1, "                                             </tr>"
+    print #1, "                                          </table>"
+    print #1, "                                          </FORM>"
+    print #1, ""
+    print #1, "                                          </td></tr></table>"
+    print #1, ""
+    print #1, "                                          <BR>"
+    print #1, "                                          <CENTER><font size=1 face=arial color=black><b>For information about <a href=""http://www.hjwbbs.com/PSOneLiner.htm"" target=""_new"">PS-OneLiner 3.0</a> by Mike Christensen, ";
+    print #1, "<A HREF=""mailto:support@hjwbbs.com"">E-Mail Pisces Software</a>."
+    print #1, "                                          <CENTER><font size=1 face=arial color=black>PS-OneLiner 3.0 Copyright &#169; 1998 Mike Christensen All Rights Reserved</font></CENTER><br><br>"
+    print #1, "                                          </td></tr></table></td></tr></table></td></tr></table></td></tr></table></td></tr></table>"
+    print #1, "</body>"
+    print #1, "</html>"
+    Close #1
+    Close #2
+
+End Sub
+
+function CheckDupe
+   dim CheckDupeRec as OneLiner
+   open "wc:\DATA\ONELINER.DAT" for random as #1 len = len(OneLiner)
+      Get #1, lof(1), CheckDupeRec
+      if CheckDupeRec.Entry = OneLinerGot then 
+         CheckDupe = FALSE
+      else
+         CheckDupe = TRUE
+      end if
+   close #1
+end function
+
+ReadCfg
+OneLinerGot = AtCodesToUpper(GetParamStr(ParamStr(1), "OneLinerToAdd"))
+
+print "<HTML><HEAD><TITLE>PS-OneLiner 3.0</TITLE></HEAD></HEAD>"
+print "<BODY BGCOLOR=WHITE TEXT=""#000000"" LINK=""#000099"" ALINK=""#000099"">"
+
+If OneLinerGot <> "" Then 
+   if CheckDupe then
+      If NoBadWords then
+         Call WriteToDataFile
+         Call WriteToHTMLFile
+         print "<BR><BR><CENTER><H1>Your OneLiner Was Added!</H1></CENTER>"
+         Print "<CENTER><a href=""/public/graffiti.htm"">Click Here</a> to return to the Graffiti Wall.</CENTER>"
+         Print "<CENTER><a href=""/"">Click Here</a> to return to the main page.</CENTER>"
+      else
+         print "<BR><BR><CENTER><B>Your OneLiner was NOT added due to the language it contained.</B></CENTER>"
+         Print "<CENTER><a href=""/public/graffiti.htm"">Click Here</a> to return to the Graffiti Wall.</CENTER>"
+         Print "<CENTER><a href=""/"">Click Here</a> to return to the main page.</CENTER>"
+      end if
+   else
+      print "<BR><BR><CENTER><B>Duplicate Entry - This is most likely because you hit the BACK button in your browser.</B></CENTER>"
+      Print "<CENTER><a href=""/public/graffiti.htm"">Click Here</a> to return to the Graffiti Wall.</CENTER>"
+      Print "<CENTER><a href=""/"">Click Here</a> to return to the main page.</CENTER>"
+   end if
+Else
+   print "<BR><BR><CENTER><H1>Blank OneLiners Are Not Aloud!</H1></CENTER>"
+   Print "<CENTER><a href=""/public/graffiti.htm"">Click Here</a> to return to the Graffiti Wall.</CENTER>"
+   Print "<CENTER><a href=""/"">Click Here</a> to return to the main page.</CENTER>"
+End If
+
+print "<BR></HTML>"
+End
+

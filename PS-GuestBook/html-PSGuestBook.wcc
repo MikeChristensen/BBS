@@ -1,0 +1,445 @@
+//PS-GuestBook by Mike Christensen
+//Filename: html-PSGuestBook.wcc
+//Written 2-24-98 by Mike Christensen
+//Contact hiawatha@znet.com or hiawatha@hjwbbs.com or www.hjwbbs.com
+
+//This source can be freely distributed for learning purposes only.
+//You cannot distribute a compiled version of this product or accept
+//anything in return for this code.
+
+//This is the form you will have to add to your web site:
+
+//   <FORM METHOD="POST" ACTION="/public/code/html-PSGuestBook">
+//   
+//   <input type=text size=35 maxlength=75 name="UserName">
+//   <input type=text size=35 maxlength=75 name="UserEmail">
+//   <input type=text size=35 maxlength=100 name="Location">
+//   <input type=text size=35 maxlength=4 name="Age">
+//   <input type=text size=35 maxlength=100 name="WebSite">
+//   <textarea rows=9 cols=60 name="Comments"></TEXTAREA>
+//   <INPUT type="submit" value="Sign"> <INPUT type="reset" VALUE="Clear Form">
+//   </FORM>
+
+#include <htmlutil.wch>
+
+type TGuestEntry //Setup our data type to store Guest Book entries with
+   UserName as string * 75
+   UserEmail as string * 75
+   Location as string * 100
+   Age as string * 4
+   WebSite as string * 100
+   Comments as string * 512
+   Deleted as boolean
+   DateEntered as DateTime
+   WhatIP as String * 16
+end type
+
+Dim FUrl as integer = Open ParamStr(1) for input //Open file passed on command line for URL
+Dim URL as string //Holds URL string
+
+function WriteDB //Function writes entry to database
+   dim f as integer = open "wc:\data\GuestBook.dat" for random len=len(TGuestEntry)
+   dim noDupe as boolean = FALSE
+   if f <= 0 then end
+   
+   dim ToWrite as TGuestEntry
+   dim dupeChecker as TGuestEntry
+
+   ToWrite.UserName = trim(GetParamStr(URL, "UserName"))
+   ToWrite.UserEmail = trim(GetParamStr(URL, "UserEmail"))
+   ToWrite.Location = trim(GetParamStr(URL, "Location"))
+   ToWrite.Age = trim(GetParamStr(URL, "Age"))
+   ToWrite.WebSite = trim(GetParamStr(URL, "WebSite"))
+   ToWrite.Comments = trim(GetParamStr(URL, "Comments"))
+   ToWrite.Deleted = FALSE
+   GetCurrentDateTime(ToWrite.DateEntered)
+   ToWrite.WhatIP = GetCallerId
+   
+   get #f, lof(f), dupeChecker //Reads last record and checks if it's the same as this record (Because of back button)
+   if dupeChecker.UserName <> ToWrite.UserName then noDupe = TRUE
+   if dupeChecker.UserEmail <> ToWrite.UserEmail then noDupe = TRUE
+   if dupeChecker.Location <> ToWrite.Location then noDupe = TRUE
+   if dupeChecker.Age <> ToWrite.Age then noDupe = TRUE
+   if dupeChecker.WebSite <> ToWrite.WebSite then noDupe = TRUE
+   if dupeChecker.Comments <> ToWrite.Comments then noDupe = TRUE
+   if DateString(dupeChecker.DateEntered) <> DateString(ToWrite.DateEntered) then noDupe = TRUE
+   
+   if noDupe then put #f, lof(f) + 1, ToWrite //If not a duplicate, writes it to the end of the file
+   close #f
+end function
+
+function WriteNewGuestBook
+   //You can get rid of all this HTML code and put whatever you want..  This is just how I setup my site
+   dim f as integer = open "c:\TPNWeb\GBook.htm" for output
+   dim g as integer = open "wc:\data\GuestBook.dat" for random len=len(TGuestEntry)
+   dim scanEntry as TGuestEntry
+   dim looper as integer = lof(g)
+
+   print #f, "<HTML>"
+   print #f, "<HEAD>"
+   print #f, "<TITLE>Pisces Software Guestbook</TITLE>"
+   print #f, "<META name=""description"" content=""The Pisces Software Guestbook"">"
+   print #f, "</HEAD>"
+   print #f, "<script language=""JavaScript"">"
+   print #f, "<!--"
+   print #f, ""
+   print #f, "var bName = navigator.appName;"
+   print #f, "var bVer = parseInt(navigator.appVersion);"
+   print #f, ""
+   print #f, "var NS4 = (bName == ""Netscape"" && bVer >= 4);"
+   print #f, "var IE4 = (bName == ""Microsoft Internet Explorer"" && bVer >= 4);"
+   print #f, "var NS3 = (bName == ""Netscape"" && bVer < 4);"
+   print #f, "var IE3 = (bName == ""Microsoft Internet Explorer"" && bVer < 4);"
+   print #f, ""
+   print #f, "window.error = null"
+   print #f, ""
+   print #f, "if(!IE3) {"
+   print #f, "   oneOn = new Image"
+   print #f, "   twoOn = new Image"
+   print #f, "   threeOn = new Image"
+   print #f, "   fourOn = new Image"
+   print #f, "   oneOff = new Image"
+   print #f, "   twoOff = new Image"
+   print #f, "   threeOff = new Image"
+   print #f, "   fourOff = new Image"
+   print #f, ""
+   print #f, "   linkSupportOff = new Image"
+   print #f, "   linkDownloadsOff = new Image"
+   print #f, "   linkProductsOff = new Image"
+   print #f, "   linkWriteUsOff = new Image"
+   print #f, "   linkOnlineRegistrationsOff = new Image"
+   print #f, "   linkAboutOff = new Image"
+   print #f, "   linkHomePageOff = new Image"
+   print #f, ""
+   print #f, "   linkSupportOn = new Image"
+   print #f, "   linkDownloadsOn = new Image"
+   print #f, "   linkProductsOn = new Image"
+   print #f, "   linkWriteUsOn = new Image"
+   print #f, "   linkOnlineRegistrationsOn = new Image"
+   print #f, "   linkAboutOn = new Image"
+   print #f, "   linkHomePageOn = new Image"
+   print #f, ""
+   print #f, "   oneOn.src = ""graphics/Option1On.gif"""
+   print #f, "   twoOn.src = ""graphics/Option2On.gif"""
+   print #f, "   threeOn.src = ""graphics/Option3On.gif"""
+   print #f, "   fourOn.src = ""graphics/Option4On.gif"""
+   print #f, "   oneOff.src = ""graphics/Option1Off.gif"""
+   print #f, "   twoOff.src = ""graphics/Option2Off.gif"""
+   print #f, "   threeOff.src = ""graphics/Option3Off.gif"""
+   print #f, "   fourOff.src = ""graphics/Option4Off.gif"""
+   print #f, ""
+   print #f, "   linkSupportOff.src = ""graphics/linkSupport.Gif"""
+   print #f, "   linkDownloadsOff.src = ""graphics/linkDownload.Gif"""
+   print #f, "   linkProductsOff.src = ""graphics/linkProducts.Gif"""
+   print #f, "   linkWriteUsOff.src = ""graphics/linkWriteUs.Gif"""
+   print #f, "   linkOnlineRegistrationsOff.src = ""graphics/linkOnlineRegistrations.Gif"""
+   print #f, "   linkAboutOff.src = ""graphics/linkAbout.Gif"""
+   print #f, "   linkHomePageOff.src = ""graphics/linkHomePage.Gif"""
+   print #f, ""
+   print #f, "   linkSupportOn.src = ""graphics/linkSupportOver.Gif"""
+   print #f, "   linkDownloadsOn.src = ""graphics/linkDownloadOver.Gif"""
+   print #f, "   linkProductsOn.src = ""graphics/linkProductsOver.Gif"""
+   print #f, "   linkWriteUsOn.src = ""graphics/linkWriteUsOver.Gif"""
+   print #f, "   linkOnlineRegistrationsOn.src = ""graphics/linkOnlineRegistrationsOver.Gif"""
+   print #f, "   linkAboutOn.src = ""graphics/linkAboutOver.Gif"""
+   print #f, "   linkHomePageOn.src = ""graphics/linkHomePageOver.Gif"""
+   print #f, "}"
+   print #f, ""
+   print #f, "function img_act(imgName) {"
+   print #f, "        if(!IE3) {"
+   print #f, "           imgon = eval(imgName + ""On.src"");"
+   print #f, "           document [imgName].src = imgon;"
+   print #f, "        }"
+   print #f, "}"
+   print #f, ""
+   print #f, "function img_inact(imgName) {"
+   print #f, "        if(!IE3) {"
+   print #f, "           imgOff = eval(imgName + ""Off.src"");"
+   print #f, "           document [imgName].src = imgOff;"
+   print #f, "        }"
+   print #f, "}"
+   print #f, ""
+   print #f, "// -->"
+   print #f, "</script>"
+   print #f, "<BODY STYLE=""margin-top: 0px; margin-left: 0px"" bgcolor=white text=black link=black vlink=black margin=0>"
+   print #f, ""
+   print #f, "<table width=100% CELLPADDING=0 CELLSPACING=0 BORDER=0><tr width=100% bgcolor=black text=white valign=top><td valign=top>"
+   print #f, "<TABLE WIDTH=""100%"" CELLPADDING=0 CELLSPACING=0 BORDER=0>"
+   print #f, "<TR valign=middle>"
+   print #f, "<TD NOWRAP>"
+   print #f, "&nbsp;&nbsp;</td>"
+   print #f, "<td nowrap><a onMouseOver=""img_act('linkSupport')"" onMouseOut=""img_inact('linkSupport')"" href=""http://www.hjwbbs.com/Support.htm""><img name=""linkSupport"" src=""graphics/linkSupport.gif"" border=0></a></td>"
+   print #f, "<td nowrap><FONT COLOR=WHITE FACE=""Verdana, Arial, Helvetica"" SIZE=1><b>&nbsp;|&nbsp;</b></font></td>"
+   print #f, "<td nowrap><a onMouseOver=""img_act('linkDownloads')"" onMouseOut=""img_inact('linkDownloads')"" href=""Download.htm""><img name=""linkDownloads"" src=""graphics/linkDownload.gif"" border=0></a></td>"
+   print #f, "<td nowrap><FONT COLOR=WHITE FACE=""Verdana, Arial, Helvetica"" SIZE=1><b>&nbsp;|&nbsp;</b></font></td>"
+   print #f, "<td nowrap><a onMouseOver=""img_act('linkProducts')"" onMouseOut=""img_inact('linkProducts')"" href=""Products.htm""><img name=""linkProducts"" src=""graphics/linkProducts.gif"" border=0></a></td>"
+   print #f, "<td nowrap><FONT COLOR=WHITE FACE=""Verdana, Arial, Helvetica"" SIZE=1><b>&nbsp;|&nbsp;</b></font></td>"
+   print #f, "<td nowrap><a onMouseOver=""img_act('linkWriteUs')"" onMouseOut=""img_inact('linkWriteUs')"" href=""WriteUs.htm""><img name=""linkWriteUs"" src=""graphics/linkWriteUs.gif"" border=0></a></td>"
+   print #f, "<td nowrap><FONT COLOR=WHITE FACE=""Verdana, Arial, Helvetica"" SIZE=1><b>&nbsp;|&nbsp;</b></font></td>"
+   print #f, "<td nowrap><a onMouseOver=""img_act('linkOnlineRegistrations')"" onMouseOut=""img_inact('linkOnlineRegistrations')"" href=""OnlineRegister.htm"">"
+   print #f, "<img name=""linkOnlineRegistrations"" src=""graphics/linkOnlineRegistrations.gif"" border=0></a></td>"
+   print #f, "<td nowrap><FONT COLOR=WHITE FACE=""Verdana, Arial, Helvetica"" SIZE=1><b>&nbsp;|&nbsp;</b></font></td>"
+   print #f, "<td nowrap><a onMouseOver=""img_act('linkAbout')"" onMouseOut=""img_inact('linkAbout')"" href=""About.htm""><img name=""linkAbout"" src=""graphics/linkAbout.gif"" border=0></a></td>"
+   print #f, "<td nowrap><FONT COLOR=WHITE FACE=""Verdana, Arial, Helvetica"" SIZE=1><b>&nbsp;|&nbsp;</b></font></td>"
+   print #f, "<td width=100%></td>"
+   print #f, "<td nowrap valign=middle><FONT COLOR=WHITE FACE=""Verdana, Arial, Helvetica"" SIZE=1><b>| <a onMouseOver=""img_act('linkHomePage')"" onMouseOut=""img_inact('linkHomePage')"" href=""default.htm"">"
+   print #f, "<img name=""linkHomePage"" src=""graphics/linkHomePage.gif"" border=0></a>&nbsp;&nbsp;</font></font></td>"
+   print #f, "</tr>"
+   print #f, "</table>"
+   print #f, "</td></tr></table>"
+   print #f, ""
+   print #f, "<table border=0 cellpadding=10><tr><td valign=top width=137 bgcolor=#666699><center>"
+   print #f, "  <table cellpadding=0><TR>"
+   print #f, ""
+   print #f, "  <td align=left>"
+   print #f, "  <IMG SRC=""graphics/PSLogo.gif"" ALT=""Pisces Software Logo"" align=left><br>"
+   print #f, "  <br>"
+   print #f, "  </td></tr><tr>"
+   print #f, ""
+   print #f, "  <td align=left><br>"
+   print #f, "  <IMG SRC=""graphics/Search.gif"" ALT=""Search Pisces Software Site"" align=left><br>"
+   print #f, ""
+   print #f, "<FORM ACTION=""/cgi/AT-Pisces_Public_Sitesearch.exe"" METHOD=POST>"
+   print #f, "<INPUT NAME=""search"" VALUE="""" size=8>"
+   print #f, "<input type=""hidden"" name=""source"" value=""local""> "
+   print #f, "<INPUT TYPE=""hidden"" NAME=""backlink"" VALUE=""http://www.hjwbbs.com/"">"
+   print #f, "<INPUT TYPE=""hidden"" NAME=""bltext"" VALUE=""Pisces Software"">"
+   print #f, "<INPUT TYPE=""hidden"" NAME=""sp"" VALUE=""sp"">"
+   print #f, "<br><INPUT TYPE=""IMAGE"" BORDER=""0"" SRC=""http://24.0.0.28/impulse9/graphics/SearchButton.gif"" VALUE=""Search""></center>  </form>"
+   print #f, "  <br>"
+   print #f, "  </td></tr>"
+   print #f, ""
+   print #f, "  <TD align=left><hr width=80></TD></tr><tr>"
+   print #f, "  <TD><a href=""http://www.hjwbbs.com/BBSInfo.htm""><img src=""graphics/BBSLogon.gif"" border=0></a><br></TD></tr><tr>"
+   print #f, "  <TD><A HREF=""http://www.hjwbbs.com/signup.htm"" onMouseOver=""img_act('one')"" onMouseOut=""img_inact('one')"">"
+   print #f, "  <img name=""one"" src=""graphics/Option1Off.gif"" border=0 alt=""New Users, Click Here.""></A></TD></tr><tr>"
+   print #f, "  <TD><A HREF=""http://bbs.hjwbbs.com:8081/login?mode=html"" target=""_top"" onMouseOver=""img_act('two')"" onMouseOut=""img_inact('two')"">  "
+   print #f, "  <img name=""two"" src=""graphics/Option2Off.gif"" border=0 alt=""Logon with your web browser.""></A></TD></tr><tr>"
+   print #f, "  <TD><A HREF=""http://bbs.hjwbbs.com:8081/login?mode=client"" target=""_top"" onMouseOver=""img_act('three')"" onMouseOut=""img_inact('three')"">"
+   print #f, "  <img name=""three"" src=""graphics/Option3Off.gif"" border=0 alt=""Logon with the Wildcat! Client.""></A></TD></tr>"
+   print #f, "  <TD><A HREF=""/code/html-BetaCorner"" onMouseOver=""img_act('four')"" onMouseOut=""img_inact('four')"">"
+   print #f, "  <img name=""four"" src=""graphics/Option4Off.gif"" border=0 alt=""For Pisces Software Beta Testers Only.""></A></TD></tr><tr>"
+   print #f, "  <TD><A HREF=""http://www.hjwbbs.com/Index.htm""><br><img src=""graphics/SiteIndex.gif"" border=0></A></TD></tr><tr>"
+   print #f, "  </table>"
+   print #f, "</td><td bgcolor=white background="""" valign=top align=left width=95%>"
+   print #f, "<center>"
+   print #f, "<font  face=""Arial,Helvetica"">"
+   print #f, "<font color=#666699><H1 ALIGN=CENTER><B>Pisces Software Guest Book</B></H1></font>"
+   print #f, ""
+   print #f, "<P><img src=""/graphics/guest.jpg"">"
+   print #f, "<BR>"
+   print #f, "Please feel free to <a href=""http://www.hjwbbs.com/GuestBook.htm""><b>sign our constantly updated Guest Book</b></A>.  Please keep it clean, and please do not include links to large graphics."
+   print #f, "</center><br>"
+   
+   print #f, "<center>"
+   
+   do while looper > 0 //This loop scans in all records and writes them to our HTML file..
+      get #g, looper, scanEntry //Gets the next entry from the record
+      
+      if not scanEntry.Deleted then //Is the entry deleted (You'd have to make an editor to delete entry)
+         print #f, "<table border width=95%><tr><td bgcolor=#666699><font face=arial size=1 color=white><b>User Name</td>";
+         //The InStr checks if there's a @ and a . in the email address, if not, assumes it's not valid
+         if InStr(trim(scanEntry.UserEmail), "@") > 0 and InStr(trim(scanEntry.UserEmail), ".") > 0 then
+            print #f, "<td><a href=""mailto:";scanEntry.UserEmail;"""><font face=arial size=1>";scanEntry.UserName;"</a></td>";
+         else
+            print #f, "<td><font face=arial size=1>";scanEntry.UserName;"</td>";
+         end if
+         print #f, "<td bgcolor=#666699><font face=arial size=1 color=white><b>Age</td><td><font face=arial size=1>";scanEntry.Age;"</td>"
+         print #f, "<tr><td bgcolor=#666699><font face=arial size=1 color=white><b>Location</td><td colspan=3><font face=arial size=1>";scanEntry.Location;"</td></tr>"
+         print #f, "<tr><td bgcolor=#666699><font face=arial size=1 color=white><b>Website</td>";
+         
+         //If they didn't put a web site in, it won't make a link to their web site
+         if trim(scanEntry.WebSite) = "" then
+            print #f, "<td><font face=arial size=1>None</td>";
+         else
+            //If there is no http:// before their web site, it puts one in.
+            if ucase(left(scanEntry.WebSite, 7)) <> "HTTP://" then
+               scanEntry.WebSite = "http://" + scanEntry.WebSite
+            end if
+            print #f, "<td><a href=""";scanEntry.WebSite;"""><font face=arial size=1>";scanEntry.WebSite;"</a></td>";
+         end if
+
+         print #f, "<td bgcolor=#666699><font face=arial size=1 color=white><b>Date Entered</td><td><font face=arial size=1>";DateString(scanEntry.DateEntered);" at ";TimeString(scanEntry.DateEntered);"</td></tr>"
+         print #f, "<tr><td colspan=4><font face=arial size=2 color=#666699>";scanEntry.Comments;"</td></tr></table><br><hr><br>"
+      end if
+      dec(looper) //Looper holds which record we wanna get      
+   loop
+
+   print #f, "</center></td></table>"
+   print #f, "</BODY>"
+   print #f, "</HTML>"
+   close #f
+   close #g
+   end
+end function
+
+if FUrl > 0 then //If the URL file was opened, it reads in the line and closes the file
+   Input #FUrl, URL
+   Close #FUrl
+else //Otherwise it assumed we used the GET method in our form..
+   URL = ParamStr(1)
+end if
+
+   print "<HTML>"
+   print "<HEAD>"
+   print "<TITLE>Pisces Software Guestbook</TITLE>"
+   print "</HEAD>"
+   print "<script language=""JavaScript"">"
+   print "<!--"
+   print ""
+   print "var bName = navigator.appName;"
+   print "var bVer = parseInt(navigator.appVersion);"
+   print ""
+   print "var NS4 = (bName == ""Netscape"" && bVer >= 4);"
+   print "var IE4 = (bName == ""Microsoft Internet Explorer"" && bVer >= 4);"
+   print "var NS3 = (bName == ""Netscape"" && bVer < 4);"
+   print "var IE3 = (bName == ""Microsoft Internet Explorer"" && bVer < 4);"
+   print ""
+   print "window.error = null"
+   print ""
+   print "if(!IE3) {"
+   print "   oneOn = new Image"
+   print "   twoOn = new Image"
+   print "   threeOn = new Image"
+   print "   fourOn = new Image"
+   print "   oneOff = new Image"
+   print "   twoOff = new Image"
+   print "   threeOff = new Image"
+   print "   fourOff = new Image"
+   print ""
+   print "   linkSupportOff = new Image"
+   print "   linkDownloadsOff = new Image"
+   print "   linkProductsOff = new Image"
+   print "   linkWriteUsOff = new Image"
+   print "   linkOnlineRegistrationsOff = new Image"
+   print "   linkAboutOff = new Image"
+   print "   linkHomePageOff = new Image"
+   print ""
+   print "   linkSupportOn = new Image"
+   print "   linkDownloadsOn = new Image"
+   print "   linkProductsOn = new Image"
+   print "   linkWriteUsOn = new Image"
+   print "   linkOnlineRegistrationsOn = new Image"
+   print "   linkAboutOn = new Image"
+   print "   linkHomePageOn = new Image"
+   print ""
+   print "   oneOn.src = ""graphics/Option1On.gif"""
+   print "   twoOn.src = ""graphics/Option2On.gif"""
+   print "   threeOn.src = ""graphics/Option3On.gif"""
+   print "   fourOn.src = ""graphics/Option4On.gif"""
+   print "   oneOff.src = ""graphics/Option1Off.gif"""
+   print "   twoOff.src = ""graphics/Option2Off.gif"""
+   print "   threeOff.src = ""graphics/Option3Off.gif"""
+   print "   fourOff.src = ""graphics/Option4Off.gif"""
+   print ""
+   print "   linkSupportOff.src = ""graphics/linkSupport.Gif"""
+   print "   linkDownloadsOff.src = ""graphics/linkDownload.Gif"""
+   print "   linkProductsOff.src = ""graphics/linkProducts.Gif"""
+   print "   linkWriteUsOff.src = ""graphics/linkWriteUs.Gif"""
+   print "   linkOnlineRegistrationsOff.src = ""graphics/linkOnlineRegistrations.Gif"""
+   print "   linkAboutOff.src = ""graphics/linkAbout.Gif"""
+   print "   linkHomePageOff.src = ""graphics/linkHomePage.Gif"""
+   print ""
+   print "   linkSupportOn.src = ""graphics/linkSupportOver.Gif"""
+   print "   linkDownloadsOn.src = ""graphics/linkDownloadOver.Gif"""
+   print "   linkProductsOn.src = ""graphics/linkProductsOver.Gif"""
+   print "   linkWriteUsOn.src = ""graphics/linkWriteUsOver.Gif"""
+   print "   linkOnlineRegistrationsOn.src = ""graphics/linkOnlineRegistrationsOver.Gif"""
+   print "   linkAboutOn.src = ""graphics/linkAboutOver.Gif"""
+   print "   linkHomePageOn.src = ""graphics/linkHomePageOver.Gif"""
+   print "}"
+   print ""
+   print "function img_act(imgName) {"
+   print "        if(!IE3) {"
+   print "           imgon = eval(imgName + ""On.src"");"
+   print "           document [imgName].src = imgon;"
+   print "        }"
+   print "}"
+   print ""
+   print "function img_inact(imgName) {"
+   print "        if(!IE3) {"
+   print "           imgOff = eval(imgName + ""Off.src"");"
+   print "           document [imgName].src = imgOff;"
+   print "        }"
+   print "}"
+   print ""
+   print "// -->"
+   print "</script>"
+   print "<BODY STYLE=""margin-top: 0px; margin-left: 0px"" bgcolor=white text=black link=black vlink=black margin=0>"
+   print ""
+   print "<table width=100% CELLPADDING=0 CELLSPACING=0 BORDER=0><tr width=100% bgcolor=black text=white valign=top><td valign=top>"
+   print "<TABLE WIDTH=""100%"" CELLPADDING=0 CELLSPACING=0 BORDER=0>"
+   print "<TR valign=middle>"
+   print "<TD NOWRAP>"
+   print "&nbsp;&nbsp;</td>"
+   print "<td nowrap><a onMouseOver=""img_act('linkSupport')"" onMouseOut=""img_inact('linkSupport')"" href=""http://www.hjwbbs.com/Support.htm""><img name=""linkSupport"" src=""graphics/linkSupport.gif"" border=0></a></td>"
+   print "<td nowrap><FONT COLOR=WHITE FACE=""Verdana, Arial, Helvetica"" SIZE=1><b>&nbsp;|&nbsp;</b></font></td>"
+   print "<td nowrap><a onMouseOver=""img_act('linkDownloads')"" onMouseOut=""img_inact('linkDownloads')"" href=""Download.htm""><img name=""linkDownloads"" src=""graphics/linkDownload.gif"" border=0></a></td>"
+   print "<td nowrap><FONT COLOR=WHITE FACE=""Verdana, Arial, Helvetica"" SIZE=1><b>&nbsp;|&nbsp;</b></font></td>"
+   print "<td nowrap><a onMouseOver=""img_act('linkProducts')"" onMouseOut=""img_inact('linkProducts')"" href=""Products.htm""><img name=""linkProducts"" src=""graphics/linkProducts.gif"" border=0></a></td>"
+   print "<td nowrap><FONT COLOR=WHITE FACE=""Verdana, Arial, Helvetica"" SIZE=1><b>&nbsp;|&nbsp;</b></font></td>"
+   print "<td nowrap><a onMouseOver=""img_act('linkWriteUs')"" onMouseOut=""img_inact('linkWriteUs')"" href=""WriteUs.htm""><img name=""linkWriteUs"" src=""graphics/linkWriteUs.gif"" border=0></a></td>"
+   print "<td nowrap><FONT COLOR=WHITE FACE=""Verdana, Arial, Helvetica"" SIZE=1><b>&nbsp;|&nbsp;</b></font></td>"
+   print "<td nowrap><a onMouseOver=""img_act('linkOnlineRegistrations')"" onMouseOut=""img_inact('linkOnlineRegistrations')"" href=""OnlineRegister.htm"">"
+   print "<img name=""linkOnlineRegistrations"" src=""graphics/linkOnlineRegistrations.gif"" border=0></a></td>"
+   print "<td nowrap><FONT COLOR=WHITE FACE=""Verdana, Arial, Helvetica"" SIZE=1><b>&nbsp;|&nbsp;</b></font></td>"
+   print "<td nowrap><a onMouseOver=""img_act('linkAbout')"" onMouseOut=""img_inact('linkAbout')"" href=""About.htm""><img name=""linkAbout"" src=""graphics/linkAbout.gif"" border=0></a></td>"
+   print "<td nowrap><FONT COLOR=WHITE FACE=""Verdana, Arial, Helvetica"" SIZE=1><b>&nbsp;|&nbsp;</b></font></td>"
+   print "<td width=100%></td>"
+   print "<td nowrap valign=middle><FONT COLOR=WHITE FACE=""Verdana, Arial, Helvetica"" SIZE=1><b>| <a onMouseOver=""img_act('linkHomePage')"" onMouseOut=""img_inact('linkHomePage')"" href=""default.htm"">"
+   print "<img name=""linkHomePage"" src=""graphics/linkHomePage.gif"" border=0></a>&nbsp;&nbsp;</font></font></td>"
+   print "</tr>"
+   print "</table>"
+   print "</td></tr></table>"
+   print ""
+   print "<table border=0 cellpadding=10><tr><td valign=top width=137 bgcolor=#666699><center>"
+   print "  <table cellpadding=0><TR>"
+   print ""
+   print "  <td align=left>"
+   print "  <IMG SRC=""graphics/PSLogo.gif"" ALT=""Pisces Software Logo"" align=left><br>"
+   print "  <br>"
+   print "  </td></tr><tr>"
+   print ""
+   print "  <td align=left><br>"
+   print "  <IMG SRC=""graphics/Search.gif"" ALT=""Search Pisces Software Site"" align=left><br>"
+   print ""
+   print "<FORM ACTION=""/cgi/AT-Pisces_Public_Sitesearch.exe"" METHOD=POST>"
+   print "<INPUT NAME=""search"" VALUE="""" size=8>"
+   print "<input type=""hidden"" name=""source"" value=""local""> "
+   print "<INPUT TYPE=""hidden"" NAME=""backlink"" VALUE=""http://www.hjwbbs.com/"">"
+   print "<INPUT TYPE=""hidden"" NAME=""bltext"" VALUE=""Pisces Software"">"
+   print "<INPUT TYPE=""hidden"" NAME=""sp"" VALUE=""sp"">"
+   print "<br><INPUT TYPE=""IMAGE"" BORDER=""0"" SRC=""http://24.0.0.28/impulse9/graphics/SearchButton.gif"" VALUE=""Search""></center>  </form>"
+   print "  <br>"
+   print "  </td></tr>"
+   print ""
+   print "  <TD align=left><hr width=80></TD></tr><tr>"
+   print "  <TD><a href=""http://www.hjwbbs.com/BBSInfo.htm""><img src=""graphics/BBSLogon.gif"" border=0></a><br></TD></tr><tr>"
+   print "  <TD><A HREF=""http://www.hjwbbs.com/signup.htm"" onMouseOver=""img_act('one')"" onMouseOut=""img_inact('one')"">"
+   print "  <img name=""one"" src=""graphics/Option1Off.gif"" border=0 alt=""New Users, Click Here.""></A></TD></tr><tr>"
+   print "  <TD><A HREF=""http://bbs.hjwbbs.com:8081/login?mode=html"" target=""_top"" onMouseOver=""img_act('two')"" onMouseOut=""img_inact('two')"">  "
+   print "  <img name=""two"" src=""graphics/Option2Off.gif"" border=0 alt=""Logon with your web browser.""></A></TD></tr><tr>"
+   print "  <TD><A HREF=""http://bbs.hjwbbs.com:8081/login?mode=client"" target=""_top"" onMouseOver=""img_act('three')"" onMouseOut=""img_inact('three')"">"
+   print "  <img name=""three"" src=""graphics/Option3Off.gif"" border=0 alt=""Logon with the Wildcat! Client.""></A></TD></tr>"
+   print "  <TD><A HREF=""/code/html-BetaCorner"" onMouseOver=""img_act('four')"" onMouseOut=""img_inact('four')"">"
+   print "  <img name=""four"" src=""graphics/Option4Off.gif"" border=0 alt=""For Pisces Software Beta Testers Only.""></A></TD></tr><tr>"
+   print "  <TD><A HREF=""http://www.hjwbbs.com/Index.htm""><br><img src=""graphics/SiteIndex.gif"" border=0></A></TD></tr><tr>"
+   print "  </table>"
+   print "</td><td bgcolor=white background="""" valign=top align=left width=95%>"
+
+//Sees if the USerName and Comments field have something in them, if not, gives error msg and quits
+if trim(GetParamStr(URL, "UserName")) = "" or trim(GetParamStr(URL, "Comments")) = "" then
+   print "<br><br><br><center><font face=arial size=2 color=black><b>All Required Field Must Be Filled Out.  Please Press Back To <a href=""http://www.hjwbbs.com/GuestBook.htm"">Try Again</a>.</b></font></center>"
+   print "</td></table>"
+   print "</BODY>"
+   print "</HTML>"
+   end
+end if
+
+   print "<br><br><center><font face=arial size=2 color=black><b>Thank You!  <a href=""http://www.hjwbbs.com/GBook.htm"">Click Here</a> To View The GuestBook</b></font></center>"
+   print "</td></table>"
+   print "</BODY>"
+   print "</HTML>"
+   WriteDB
+   WriteNewGuestBook
+   end

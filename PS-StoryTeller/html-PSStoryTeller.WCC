@@ -1,0 +1,1037 @@
+//New Features
+//   Has link to home page after submitting
+//   Thank You page can be custimized as wc:\data\PSStoryPosted.htm
+
+#include "htmlutil.wch"
+#include "dispfile.wch"
+
+//This data structure holds information on a story, but not the story itself
+//The stories themselves are in seperate data files.
+
+type TStory
+   StoryTitle as string * 30 //The first person who enters text gets to name the story
+   Entries as integer        //Number of people who contributed to this story
+   Finished as boolean       //Is the story finished, or can people still add to it?
+   StartDate as DateTime     //Date this story started
+   EndDate as DateTime       //Date this story ended
+end type
+
+//Everyone who contributes to the story fills out a form to define the data in 
+//this following structure.
+
+type TStoryEntry
+   Author as string * 50      //Name of the author
+   Email as string * 50       //His or her email address, if they chose to leave it
+   Anonymous as boolean       //Can other people see who they are?
+   DateEntered as DateTime    //The date and the time they entered this
+   FirstByteOffset as integer //The offset in the file for their part of the story (nth byte)
+   EmailWhenDone as boolean   //The author said "Please e-mail me this story when it's done!"
+end type
+
+type TConfigFile
+   GraphicsPath as string * 200 //This stuff defined in PSSTORY.CFG
+   MaxEntries as integer
+   MsgConfToPost as short
+   RegistrationCode as string * 20
+end type
+
+declare function GetMakewild dll "wcsrv" (mw as TMakewild) as boolean
+
+Dim URL as string //Holds URL string
+dim cf as TConfigFile
+
+function Regged as boolean
+   Regged = TRUE
+end function
+
+function GetStoryOffset as integer
+   dim i as integer = open "wc:\data\StoryDatabase.dat" for random len=len(TStory)
+   dim GetLastStory as TStory
+   dim RecNum as integer = 0
+   
+   Get #i, lof(i), GetLastStory
+   RecNum = lof(i)
+   close #i
+   
+   if GetLastStory.Finished then
+      GetStoryOffset = 1
+      exit function
+   end if
+
+   if RecNum = 0 then RecNum = 1
+
+   open "wc:\data\Story." + str(RecNum) for append as #i
+      if lof(i) = 0 then
+         GetStoryOffset = 1
+      else
+         GetStoryOffset = lof(i)
+      end if
+   close #i
+end function
+
+function CheckDBFiles as boolean
+   dim i as integer = open "wc:\data\StoryDatabase.dat" for random len=len(TStory)
+   if lof(i) <= 0 then CheckDBFiles = FALSE else CheckDBFiles = TRUE
+   close #i
+end function
+      
+function EmailStory(GetLastStory as TStory, RecNum as integer)
+   if LoginSystem then
+      dim EntryLooper as integer = 0
+      dim GetStoryEntry as TStoryEntry
+      dim AlreadyEmailed() as string * 50
+      dim CheckAlreadyEmailed as boolean = FALSE
+      dim msg as TMsgHeader
+   
+      redim AlreadyEmailed(1)
+      AlreadyEmailed(1) = ""
+   
+      dim i as integer = open "wc:\data\StoryEntries." + str(RecNum) for random len=len(TStoryEntry)
+      
+      do while not eof(i)
+         inc(EntryLooper)
+         
+         clear GetStoryEntry
+         get #i, EntryLooper, GetStoryEntry
+         if GetStoryEntry.EmailWhenDone and InStr(GetStoryEntry.Email, "@") > 0 then
+            dim CheckerCounter as integer
+            CheckAlreadyEmailed = FALSE
+   
+            for CheckerCounter = 0 to abs(high(AlreadyEmailed))
+               CheckAlreadyEmailed = CheckAlreadyEmailed or (ucase(AlreadyEmailed(CheckerCounter)) = ucase(GetStoryEntry.Email))
+            next
+            
+            if not CheckAlreadyEmailed then
+               redim AlreadyEmailed(high(AlreadyEmailed) + 1)
+               AlreadyEmailed(high(AlreadyEmailed)) = GetStoryEntry.Email
+               
+               clear msg
+               
+               msg.From.Name = "PS-StoryTeller"
+               msg.From.Id = 0
+               msg.To.Name = trim(GetStoryEntry.Email)
+               msg.To.Id   = 0
+               msg.Subject = "PS-StoryTeller: " + GetLastStory.StoryTitle
+               msg.Conference = 0
+               msg.Private = True
+               
+               AddMessage(msg, "wc:\data\Story." + str(RecNum))
+            end if
+         end if
+      loop
+      close #i
+      
+      if Regged then
+         clear msg
+         
+         msg.From.Name = "PS-StoryTeller"
+         msg.To.Name = "ALL"
+         msg.To.Id   = 0
+         msg.Subject = Trim(GetLastStory.StoryTitle)
+         msg.Conference = cf.MsgConfToPost
+         msg.Private = True
+         
+         AddMessage(msg, "wc:\data\Story." + str(RecNum))
+      end if
+   end if
+end function
+
+function WriteStoryToDB as boolean
+   WriteStoryToDB = True
+
+   dim i as integer = open "wc:\data\StoryDatabase.dat" for random len=len(TStory)
+   dim GetLastStory as TStory
+   dim StoryEntryInfo as TStoryEntry
+   dim RecNum as integer = 0
+   dim NewOffset as integer = 0
+   
+   get #i, lof(i), GetLastStory
+   
+   if GetLastStory.Finished or lof(i) = 0 then
+      clear GetLastStory
+      if trim(GetParamStr(URL, "StoryName")) <> "" then
+         GetLastStory.StoryTitle = trim(GetParamStr(URL, "StoryName"))
+      else
+         GetLastStory.StoryTitle = "The Untitled Story"
+      end if
+
+      GetLastStory.Entries = 1
+      GetLastStory.Finished = FALSE
+      GetCurrentDateTime(GetLastStory.StartDate)
+      
+      RecNum = lof(i) + 1
+   else
+      inc(GetLastStory.Entries)
+      RecNum = lof(i)
+   end if
+   
+   if GetLastStory.Entries = cf.MaxEntries then
+      GetLastStory.Finished = TRUE
+      GetCurrentDateTime(GetLastStory.EndDate)
+      print "<b>The story has ended!  <a href=""html-PSStoryTeller?ReadStory=";RecNum;""">Click Here</a> to read it!<br><br>"
+   end if
+   
+   put #i, RecNum, GetLastStory
+   close #i
+   
+   if RecNum = 0 then inc(RecNum)
+
+   open "wc:\data\Story." + str(RecNum) for append as #i
+      NewOffset = lof(i)
+      if NewOffset = 0 then inc(NewOffset)
+      print #i, GetParamStr(URL, "StoryText")
+   close #i
+
+   open "wc:\data\StoryEntries." + str(RecNum) for random as #i len=len(TStoryEntry)
+      clear StoryEntryInfo
+      if trim(GetParamStr(URL, "AuthorName")) <> "" then
+         StoryEntryInfo.Author = trim(GetParamStr(URL, "AuthorName"))
+      else
+         StoryEntryInfo.Author = "Anonymous"
+      end if
+      if InStr(trim(GetParamStr(URL, "EMail")), "@") > 0 then
+         StoryEntryInfo.Email = trim(GetParamStr(URL, "EMail"))
+      else
+         StoryEntryInfo.Anonymous = TRUE 
+      end if
+      if trim(GetParamStr(URL, "HideEmail")) = "on" then StoryEntryInfo.Anonymous = TRUE 
+      GetCurrentDateTime(StoryEntryInfo.DateEntered)
+      StoryEntryInfo.FirstByteOffset = NewOffset
+
+      if trim(GetParamStr(URL, "EmailWhenDone")) = "on" then
+         StoryEntryInfo.EmailWhenDone = TRUE
+      end if
+      put #i, lof(i) + 1, StoryEntryInfo
+   close #i
+   
+   if GetLastStory.Finished then EmailStory(GetLastStory, RecNum)
+end function
+
+function ShowLastLine(LastOffset as integer) as boolean
+   ShowLastLine = TRUE
+   dim i as integer = open "wc:\data\StoryDatabase.dat" for random len=len(TStory)
+   dim GetLastStory as TStory
+   dim StoryEntryInfo as TStoryEntry
+   dim RecNum as integer = 0
+   dim LastLine as string = ""
+   
+   if i > 0 then
+      RecNum = lof(i)
+      get #i, RecNum, GetLastStory
+      close #i
+      
+      if GetLastStory.Finished or RecNum = 0 then
+         print "You are the first person to write in this story!  This means you can decide what the story will be called and how it will begin.<P>"
+         ShowLastLine = FALSE
+         LastOffset = 1
+         exit function
+      else
+         if GetLastStory.Entries = cf.MaxEntries - 1 then
+            print "<font face=arial size=1 color=red><b>Notice: </b><font face=arial size=1 color=black><b>After your entry, this story will be finished!  Therefore, it is your responsibility to"
+            print "bring the story to a logical conclusion.  Or not!</b></font></font><br><br>"
+         end if
+         
+         open "wc:\data\StoryEntries." + str(RecNum) for random as #i len=len(TStoryEntry)
+         get #i, lof(i), StoryEntryInfo
+         close #i
+         
+         if StoryEntryInfo.FirstByteOffset = 0 then inc(StoryEntryInfo.FirstByteOffset)
+
+         open "wc:\data\Story." + str(RecNum) for binary as #i
+         
+         dim RecallLooper as integer
+         dim LetterPointer as byte
+
+         LastOffset = lof(i)
+         
+         if lof(i) > 80 then
+            seek #i, lof(i) - 80
+         else
+            seek #i, 1
+         end if
+            
+         if loc(i) > 1 then
+            for RecallLooper = loc(i) to lof(i)
+               get #i, RecallLooper, LetterPointer
+               if LetterPointer = 32 then exit for
+            next
+         end if
+         
+         print "<b>Last Line:</b><br>"
+         for RecallLooper = loc(i) to lof(i)
+            get #i, RecallLooper, LetterPointer
+            print chr(LetterPointer);
+         next
+         
+         print "<p>"
+   
+         close #i
+      end if
+   else
+      print "There was a database error, please e-mail the <a href=""mailto:webmaster@piscessoft.com"">Webmaster</a>."
+   end if
+end function
+
+function GetCurrentStory(CurrentStory as TStory)
+   dim i as integer = open "wc:\data\StoryDatabase.dat" for random len=len(TStory)
+   
+   if i > 0 then
+      get #i, lof(i), CurrentStory
+      close #i
+   end if
+end function
+
+function ListStories
+   dim i as integer = open "wc:\data\StoryDatabase.dat" for random len=len(TStory)
+   if i <= 0 then exit function
+   dim GetRecord as TStory
+   dim WhichRecord as integer = 1
+   
+   do while not eof(i)
+      get #i, WhichRecord, GetRecord
+      print "<TR>"
+      print "   <TD WIDTH = 250 BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000""><FONT SIZE=1 FACE='HELV,ARIAL'>"
+      
+      if GetRecord.Finished then
+         print "      <font color=red><a href=""html-PSStoryTeller?ReadStory=";WhichRecord;""">";GetRecord.StoryTitle;"</a>&nbsp;&nbsp;&nbsp;&nbsp;"
+      else
+         print "      <font color=red>";GetRecord.StoryTitle;"&nbsp;&nbsp;&nbsp;&nbsp;"
+      end if
+      
+      print "   </TD>"
+      print "   <TD WIDTH = 50 BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000""><FONT SIZE=1 FACE='HELV,ARIAL'>"
+      print "      <font color=red>";GetRecord.Entries;"&nbsp;&nbsp;"
+      print "   </TD>"
+      print "   <TD WIDTH = 100 BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000"" ><FONT SIZE=1 FACE='HELV,ARIAL'>"
+      print "      <font color=red>";DateString(GetRecord.StartDate);"&nbsp;&nbsp;";
+      print "   </TD>"
+      print "   <TD WIDTH = 100 BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000"" ><FONT SIZE=1 FACE='HELV,ARIAL'>"
+      
+      if GetRecord.Finished then
+         print "      <font color=red>";DateString(GetRecord.EndDate);"&nbsp;&nbsp;"
+      else
+         print "      <font color=red>N/A&nbsp;&nbsp;"
+      end if
+      print "   </TD>"
+      print "</TR>"
+      inc(WhichRecord)
+   loop
+   
+   close #i
+end function
+
+function ShowAuthors
+   dim i as integer = open "wc:\data\StoryDatabase.dat" for random len=len(TStory)
+   if i <= 0 then exit function
+   dim GetRecord as TStory
+   
+   dim WhichRecord as integer = 1
+   dim WhichSubRecord as integer = 1
+   dim StoryEntryInfo as TStoryEntry
+   dim ReadAheadBuffer as TStoryEntry
+
+   dim TotalBytesInStory as integer = 0
+   dim PercentTotal as real = 0
+   
+   do while not eof(i)
+      get #i, WhichRecord, GetRecord
+
+      print "<font face=arial size=2 color=black><b>";GetRecord.StoryTitle;"</b></font><br><br>"
+      
+      print "<TABLE width=95% BORDER = 1 BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#CCCCCC"" BORDERCOLORLIGHT=""#CCCCCC""  CELLPADDING = 2 CELLSPACING = 0>"
+      print "<TR>"
+      print "   <TD bgcolor=#d9d9d9 WIDTH = 200 BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000""><FONT SIZE=1 FACE='HELV,ARIAL'>"
+      print "      Name&nbsp;&nbsp;&nbsp;&nbsp;"
+      print "   </TD>"
+      print "   <TD bgcolor=#d9d9d9 WIDTH = 150 BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000""><FONT SIZE=1 FACE='HELV,ARIAL'>"
+      print "     E-Mail&nbsp;&nbsp;"
+      print "   </TD>"
+      print "   <TD bgcolor=#d9d9d9 WIDTH = 100 BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000"" ><FONT SIZE=1 FACE='HELV,ARIAL'>"
+      print "      Date Entered&nbsp;&nbsp;"
+      print "   </TD>"
+      print "   <TD bgcolor=#d9d9d9 WIDTH = 100 BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000""><FONT SIZE=1 FACE='HELV,ARIAL'>"
+      print "      % Of Story&nbsp;&nbsp;&nbsp;"
+      print "   </TD>"
+      print "</TR>"
+      
+      dim j as integer = open "wc:\data\StoryEntries." + str(WhichRecord) for random len=len(TStoryEntry)
+         WhichSubRecord = 1
+         do while not eof(j)
+            dim PointerBackup as integer
+            
+            get #j, WhichSubRecord, StoryEntryInfo
+            
+            dim k as integer = open "wc:\data\Story." + str(WhichRecord) for binary
+               TotalBytesInStory = lof(k)
+            close #k
+            
+            clear ReadAheadBuffer
+            if WhichSubRecord < lof(j) then 
+               PointerBackup = loc(j)
+               get #j, WhichSubRecord + 1, ReadAheadBuffer
+               seek #j, PointerBackup
+            
+               PercentTotal = 100 * ((ReadAheadBuffer.FirstByteOffset - StoryEntryInfo.FirstByteOffset) / TotalBytesInStory)
+            else
+               PercentTotal = 100 * ((TotalBytesInStory - StoryEntryInfo.FirstByteOffset) / TotalBytesInStory)
+            end if
+            
+            print "<TR>"
+            print "   <TD BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000""><FONT SIZE=1 FACE='HELV,ARIAL'>"
+            print "      <font color=red>";StoryEntryInfo.Author;"&nbsp;&nbsp;&nbsp;&nbsp;"
+            print "   </TD>"
+            print "   <TD BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000""><FONT SIZE=1 FACE='HELV,ARIAL'>"
+            
+            if StoryEntryInfo.Anonymous then
+               print "      <font color=red>Anonymous&nbsp;&nbsp;"   
+            else
+               print "      <font color=red><a href=""mailto:";StoryEntryInfo.Email;""">";StoryEntryInfo.Email;"</a>&nbsp;&nbsp;"
+            end if
+            
+            print "   </TD>"
+            print "   <TD BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000"" ><FONT SIZE=1 FACE='HELV,ARIAL'>"
+            print "      <font color=red>";DateString(StoryEntryInfo.DateEntered);"&nbsp;&nbsp;";
+            print "   </TD>"
+            print "   <TD BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000"" ><FONT SIZE=1 FACE='HELV,ARIAL'>"
+            print "      <font color=red>";int(PercentTotal + 1);"%&nbsp;&nbsp;";
+            print "   </TD>"
+            print "</TR>"
+            
+            inc(WhichSubRecord)
+         loop
+      close #j
+
+      print "</TABLE><p>"
+
+      inc(WhichRecord)
+   loop
+   close #i
+end function
+
+function SysopConfig
+   if GetObjectFlags(OBJECTID_MASTER_SYSOP) <= 0 then
+      print "<HTML>"
+      print "<HEAD><FONT SIZE=1 FACE=""Helv,ARIAL""></HEAD>"
+      print ""
+      print "<BODY BGCOLOR=""white"" TOPMARGIN=5 TEXT=""#000000"" LINK=""#000000"" VLINK=""#000000"" STYLE=""font-face: Helv,Arial; font-size:10pt;"">"
+       
+      print "<B>Access Denied</B><P>"
+      print "<font size=1 face=arial color=black>This area requires an administration account.</font>"
+      print "</body>"
+      print "</html>"
+      end
+   end if
+
+   dim F_CFSize as integer = open "wc:\data\PSStory.Cfg" for binary
+   dim CFSize as integer = lof(F_CFSize)
+   close #F_CFSize
+
+   print "<HTML>"
+   print "<HEAD><FONT SIZE=1 FACE=""Helv,ARIAL""></HEAD>"
+   print ""
+   print "<BODY BGCOLOR=""white"" TOPMARGIN=5 TEXT=""#000000"" LINK=""#000000"" VLINK=""#000000"" STYLE=""font-face: Helv,Arial; font-size:10pt;"">"
+    
+   if CFSize <> sizeof(TConfigFile) then
+      print "<B>First Time Configuration Setup</B><P>"
+      print "<font size=1 face=arial color=black>You must complete this first time setup form before you can continue.</font>"
+   else
+      print "<B>Administration Menu</B><P>"
+      print "<font size=1 face=arial color=black>This form will allow you to change PS-StoryTeller Configuration Options.</font>"
+   end if
+   print "<form method=post action=""html-PSStoryTeller"">"
+   print "<input type=hidden name=""ProgramConfig"" value=1>"
+   print "<TABLE BORDER=1 BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#CCCCCC"" BORDERCOLORLIGHT=""#CCCCCC""  CELLPADDING=2 CELLSPACING=0 width=95%>"
+   print "<TR>"
+   print "   <TD  BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000""><FONT SIZE=1 FACE='HELV,ARIAL'>"
+   print "      Graphics Directory URL:"
+   print "   </TD>"
+   print "   <TD BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000""><FONT SIZE=1 FACE='HELV,ARIAL'>"
+   print "      <input name=""GraphicsPath"" value=""";cf.GraphicsPath;""">"
+   print "   </TD>"
+   print "</TR>"
+    
+   print "<TR>"
+   print "   <TD BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000""><FONT SIZE=1 FACE='HELV,ARIAL'>"
+   print "      Maximum Entries Per Story:<br><font size=1 face=""ariel"" color=#919191>(Maximum of 5 if unregistered)</font>"
+   print "   </TD>"
+   print "   <TD BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000""><FONT SIZE=1 FACE='HELV,ARIAL'>"
+   print "      <input name=""MaxEntries"" value=""";cf.MaxEntries;""">"
+   print "   </TD>"
+   print "</TR>"
+    
+   print "<TR>"
+   print "   <TD BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000""><FONT SIZE=1 FACE='HELV,ARIAL'>"
+   print "      Post Finished Stories To Conference Number To:<br><font size=1 face=""ariel"" color=#919191>(Disabled if not registered)</font>"
+   print "   </TD>"
+   print "   <TD BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000""><FONT SIZE=1 FACE='HELV,ARIAL'>"
+   print "      <input name=""ConferenceToPost"" value=""";cf.MsgConfToPost;""">"
+   print "   </TD>"
+   print "</TR>"
+    
+   print "<TR>"
+   print "   <TD BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000""><FONT SIZE=1 FACE='HELV,ARIAL'>"
+   print "      Registration Code:"
+   print "   </TD>"
+   print "   <TD BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000""><FONT SIZE=1 FACE='HELV,ARIAL'>"
+   print "      <input name=""RegistrationCode"" value=""";cf.RegistrationCode;""">"
+   print "   </TD>"
+   print "</TR>"
+   print "</table>"
+    
+   print "<br><input type=submit value=""Save""></form>"
+    
+   print "</body>"
+   print "</html>"
+end function
+
+Dim FUrl as integer = Open ParamStr(1) for input //Open file passed on command line for URL
+if FUrl > 0 then //If the URL file was opened, it reads in the line and closes the file
+   Input #FUrl, URL
+   Close #FUrl
+else //Otherwise it assumed we used the GET method in our form..
+   URL = ParamStr(1)
+end if
+
+dim F_CFSize as integer = open "wc:\data\PSStory.Cfg" for binary
+dim CFSize as integer = lof(F_CFSize)
+close #F_CFSize
+
+dim i as integer = open "wc:\data\PSStory.Cfg" for random len=sizeof(TConfigFile)
+
+if CFSize = sizeof(TConfigFile) then
+   get #i, 1, cf
+   close #i
+else
+   cf.GraphicsPath = "http://www.piscessoft.com/graphics/"
+   cf.MaxEntries = 5
+   cf.MsgConfToPost = 1
+   cf.RegistrationCode = "Unregistered"
+   
+   close #i
+   if GetParamStr(URL, "Frame") = "mainscreen" or GetParamStr(URL, "Frame") = "" then
+      if GetParamInt(URL, "ProgramConfig") <> 1 then
+         SysopConfig
+         end
+      end if
+   end if
+end if
+
+if GetParamInt(URL, "ProgramConfig") = 1 then
+   cf.GraphicsPath = GetParamStr(URL, "GraphicsPath")
+   cf.MaxEntries = GetParamInt(URL, "MaxEntries")
+   cf.MsgConfToPost = GetParamInt(URL, "ConferenceToPost")
+   cf.RegistrationCode = GetParamStr(URL, "RegistrationCode")
+
+   print "<HTML>"
+   print "<HEAD><FONT SIZE=1 FACE=""Helv,ARIAL""></HEAD>"
+   print ""
+   print "<BODY BGCOLOR=""white"" TOPMARGIN=5 TEXT=""#000000"" LINK=""#000000"" VLINK=""#000000"" STYLE=""font-face: Helv,Arial; font-size:10pt;"">"
+
+   if ucase(cf.GraphicsPath) = "HTTP://24.0.0.28/IMPULSE9/GRAPHICS/" then
+      if makewild.regstring <> "03-1471" then
+         print "<B>Configuration Error</B><P>"
+         print "<font size=1 face=arial color=black>You must specify another Graphics Directory URL.</font>"
+         print "</body></html>" : end
+      end if
+   end if
+
+   if cf.MaxEntries > 5 and not Regged then
+      print "<B>Configuration Error</B><P>"
+      print "<font size=1 face=arial color=black>An unregistered copy of PS-StoryTeller cannot have more than 5 entries per story.</font>"
+      print "</body></html>" : end
+   end if
+
+   if cf.MaxEntries <= 0 then
+      print "<B>Configuration Error</B><P>"
+      print "<font size=1 face=arial color=black>Maximum entries per story must be greater than 0.</font>"
+      print "</body></html>" : end
+   end if
+
+   if cf.MsgConfToPost <= 0 then
+      print "<B>Configuration Error</B><P>"
+      print "<font size=1 face=arial color=black>Posted Stories Conference must be greater or equal to 0.</font>"
+      print "</body></html>" : end
+   end if
+    
+   print "<B>Configuration Saved</B><P>"
+   print "<font size=1 face=arial color=black>You may now press REFRESH to run PS-StoryTeller.</font>"
+   
+   dim k as integer = open "wc:\data\PSStory.Cfg" for random len=sizeof(TConfigFile)
+   put #k, 1, cf
+   close #k
+end if
+
+if GetParamStr(URL, "Frame") <> "" then
+   select case GetParamStr(URL, "Frame")
+      case "title"
+         print "<html><head><STYLE><!--A { text-decoration:none;} A:hover {color:#FFCC00;}  --></STYLE></head>"
+         print "<body text=#FFFFFF link=""#FFFFFF"" vlink=""#FFFFFF"" alink=""#FFFFFF"" bgcolor=#FFCC00 topmargin=0 leftmargin=0>"
+         print ""
+         print "<table width=100% cellpadding=0 cellspacing=0 border=0 align=LEFT>"
+         print "<tr>"
+         print "   <td bgcolor=#000000>&nbsp;<font size=2 face=arial color=white><b>Pisces Software Story Teller</b></font></td>"
+         print "   <td align=right bgcolor=#000000 valign=middle><font color=#FFFFFF>"
+         'print "      <a href=""about.htm""><img height=16 width=16 src=""";cf.GraphicsPath;"about.gif"" alt=""About..."" border=0 vspace=3 hspace=4></a>"
+         'print "      <a href=""docs.htm""><img height=16 width=16 src=""";cf.GraphicsPath;"doc.gif"" alt=""Documentation"" border=0 vspace=3 hspace=4></a>"
+         'print "      <a href=""help.htm""><img height=16 width=16 src=""";cf.GraphicsPath;"help.gif"" border=0 vspace=3 hspace=4 alt=""Help""></a>"
+         print "      <font face=""ARIAL"" size=""2""><b><a href=""http://www.piscessoft.com/"" target=""_top"">Pisces WebSite</b></font></a></font>&nbsp;&nbsp;"
+         print "   </td>"
+         print "</tr>"
+         print "</table>"
+         print ""
+         print "</body>"
+         print "</html>"
+      case "options"
+         print "<html>"
+         print "<head><STYLE><!--A { text-decoration:none;} A:hover {color:#FFCC00;}  --></STYLE></head>"
+         print ""
+         'print "<body background=""";GraphicsPath;"opbg.gif"" bgcolor=""#000000"" link=""#FFFFFF"" vlink=""#FFFFFF"" alink=""#FFCC00"" topmargin=""0"" leftmargin=""0"" style=""font-face: Verdana; font-size: 10pt;"">"
+         print "<body bgcolor=""#000000"" link=""#FFFFFF"" vlink=""#FFFFFF"" alink=""#FFCC00"" topmargin=""0"" leftmargin=""0"" style=""font-face: Verdana; font-size: 10pt;"">"
+         print ""
+         print "<br>"
+         print ""
+         print "<img src=""";cf.GraphicsPath;"StoryLogo.jpg"" border=0 width=146 height=58>"
+         print "   <table border=0 cellpadding=4 cellspacing=0 align=left>"
+         print "   <tr>"
+         print "      <td width=19 valign=""top"" align=""right"">"
+         print "         <a target=""mainscreen"" href=""/public/code/html-PSStoryTeller?command=add""><img height=8 width=8 hspace=2 align=middle src=""";cf.GraphicsPath;"bullet.gif"" border=0></a>"
+         print "      </td>"
+         print "      <td valign=""top"">"
+         print "         <font face=""ARIAL"" size=""2""><b><a target=""mainscreen"" href=""/public/code/html-PSStoryTeller?command=add"">Add To Story</a></b></font>"
+         print "      </td>"
+         print "   </tr>"
+         print "	"
+         print "   <tr>"
+         print "      <td width=19 valign=""top"" align=""right"">"
+         print "         <a target=""mainscreen"" href=""/public/code/html-PSStoryTeller?command=info""><img height=8 width=8 hspace=2 align=middle src=""";cf.GraphicsPath;"bullet.gif"" border=0></a>"
+         print "      </td>"
+         print "      <td valign=""top"">"
+         print "         <font face=""ARIAL"" size=""2""><b><a target=""mainscreen"" href=""/public/code/html-PSStoryTeller?command=info"">Story Info</a></b></font>"
+         print "      </td>"
+         print "   </tr>"
+         print ""
+         print "   <tr>"
+         print "      <td width=19 width=""50"" valign=""top"" align=""right"">"
+         print "         <a target=""mainscreen"" href=""/public/code/html-PSStoryTeller?command=list""><img height=8 width=8 hspace=2 align=middle src=""";cf.GraphicsPath;"bullet.gif"" border=0></a>"
+         print "      </td>"
+         print "      <td valign=""top"">		"
+         print "         <font face=""ARIAL"" size=""2""><b><a target=""mainscreen"" href=""/public/code/html-PSStoryTeller?command=list"">Story Database</a></b></font>&nbsp;"
+         print "      </td>"
+         print "   </tr>"
+         print ""
+         print "   <tr>"
+         print "      <td width=19 valign=""top"" align=""right"">"
+         print "         <a target=""mainscreen"" href=""/public/code/html-PSStoryTeller?command=about""><img height=8 width=8 hspace=2 align=middle src=""";cf.GraphicsPath;"bullet.gif"" border=0></a>"
+         print "      </td>"
+         print "      <td valign=""top"">"
+         print "         <font face=""ARIAL"" size=""2""><b><a target=""mainscreen"" href=""/public/code/html-PSStoryTeller?command=about"">About</a></b></font>"
+         print "      </td>"
+         print "   </tr>"
+         print ""
+         print "   <tr>"
+         print "      <td width=19 valign=""top"" align=""right"">"
+         print "         <a target=""mainscreen"" href=""/public/code/html-PSStoryTeller?command=authors""><img height=8 width=8 hspace=2 align=middle src=""";cf.GraphicsPath;"bullet.gif"" border=0></a>"
+         print "      </td>"
+         print "      <td valign=""top"">"
+         print "         <font face=""ARIAL"" size=""2""><b><a target=""mainscreen"" href=""/public/code/html-PSStoryTeller?command=authors"">Registry Of Authors</a></b></font>"
+         print "      </td>"
+         print "   </tr>"
+         
+         if GetObjectFlags(OBJECTID_MASTER_SYSOP) then
+            print "	"
+            print "   <tr>"
+            print "      <td colspan=""2"" valign=""middle"">"
+            print "         <font face=""ARIAL"" size=""2""><b>&nbsp;</b></font>"
+            print "      </td>"
+            print "   </tr>"
+            print ""
+            print "   <tr>"
+            print "      <td width=19 width=""50"" valign=""top"" align=""right"">"
+            print "         <a target=""mainscreen"" href=""/code/html-PSStoryTeller?command=sysop""><img height=8 width=8 hspace=2 align=middle src=""";cf.GraphicsPath;"bullet.gif"" border=0></a>"
+            print "      </td>"
+            print "      <td valign=""top"">"
+            print "         <font face=""ARIAL"" size=""2""><b><a target=""mainscreen"" href=""/code/html-PSStoryTeller?command=sysop"">Administration Menu</a></b></font>&nbsp;"
+            print "      </td>"
+            print "   </tr>"
+         end if
+         
+         print ""
+         print "</table>"
+         print ""
+         print "</form>"
+         print ""
+         print "</body>"
+         print "</html>"
+      case "mainscreen"
+         if not DisplayFile("wc:\data\PSStoryMain.htm") then
+            print "<html>"
+            print "<body bgcolor=white leftmargin=20>"
+            print ""
+            print "<table width=80%>"
+            print "<tr><td bgcolor=#62659C><font color=white face=arial size=2><b>Pisces Software Story Teller</b></font></td></tr>"
+            print "<tr><td bgcolor=white><font color=black face=arial size=4><b>Introduction</b></font></td></tr>"
+            print "<tr><td bgcolor=white><font color=black face=arial size=4><b>"
+            print "I</b><font color=black face=arial size=2>f you are familiar with the old game ""Round the Robin"", well"
+            print "this is a web based interpretation of the game.  The idea is, the first person starts to write a"
+            print "story about whatever he or she choses.  They then conceal all but the last line of what they"
+            print "wrote, and the next person continues the story only able to see the last line of what the"
+            print "previous person wrote.  The process continues, each person writing as much as they wish.  In the"
+            print "end, you'll have a crazy story making almost no sense, but good for a laugh.  In this version,"
+            print "web surfers can see the last line of what the last person wrote, and continue the story in the "
+            print "same manner.  Be creative, be clean, and most important, have fun!"
+            print "</font>"
+            print "</td></tr></table>"
+            print ""
+            print "<br>"
+            print "<table width=80%>"
+            print "<tr><td bgcolor=black><font color=white face=arial size=2><b>How To Play</b></font></td></tr>"
+            print "<tr><td bgcolor=white><font color=black face=arial size=4><b>           "
+            print "T</b><font color=black face=arial size=2>his program is controlled pretty much entirely"
+            print "by the side option bar at the left side of your screen.  Here you will see 5 options:"
+            print "The first, <b>Add To Story</b> lets you add to the story currently being created.  When you"
+            print "click on this option, you'll see the last line of whatever was written before you.  You"
+            print "will then be able to enter a continuation in an HTML form below.  Just submit the"
+            print "form when you're done, and that's all!  The next option, <b>Story Info</b> lets you"
+            print "see information on the current story being created.  This includes the date it was"
+            print "started, how many people have contributed so far, and other facts.  The option"
+            print "after that, <b>Story Database</b> will allow you to read, in entirety, stories"
+            print "created in the past.  Note, you cannot read a story until it is complete.  The"
+            print "following option, <b>About</b>, will bring you back to the page you are looking"
+            print "at right now, and finally, <b>Registry Of Authors</b> will give you a list of"
+            print "everyone who has ever contributed to any story in the database.  If you have"
+            print "any questions about this program, please e-mail <a href=""mailto:support@piscessoft.com"">"
+            print "support@piscessoft.com</a>.  The program itself, written in wcCODE for <a href=""http://www.winserver.com"" target=""_top"">"
+            print "Santronics Software</a>'s Wildcat! Interactive Net Server, is also available for <a href=""http://www.piscessoft.com/download.htm"" target=_top>download</a>"
+            print "if you wish to add Story Teller to your own web site!"
+            print "<br><hr width=100% color=#000000 height=1>"
+            print ""
+            print "</font>"
+            print "</td></tr></table>"
+            print ""
+            print "</body>"
+            print "</html>"
+         end if
+      case else
+         print "<html><body><b>There has been a program error, invalid Frame parameter passed</b></body></html>"
+   end select
+end if
+
+if GetParamStr(URL, "command") <> "" then
+   dim CurrentStory as TStory
+   
+   select case GetParamStr(URL, "command")
+      case "sysop"
+         SysopConfig
+         end
+      case "add"
+         dim LastOffset as integer = 0
+         GetCurrentStory(CurrentStory)
+         
+         print "<HTML>"
+         print "<HEAD><FONT SIZE=1 FACE=""Helv,ARIAL""></HEAD>"
+         print ""
+         print "<BODY BGCOLOR=""white"" TOPMARGIN=5 TEXT=""#000000"" LINK=""#000000"" VLINK=""#000000"" STYLE=""font-face: Helv,Arial; font-size:10pt;"">"
+         print "<FORM method=post action=""html-PSStoryTeller""><FONT SIZE=1 FACE=""Helv,ARIAL"">"
+         
+         if not CurrentStory.Finished then
+            if not CheckDBFiles then
+               print "<B>Creating New Story</B><P>"
+            else
+               print "<B>Name Of Story - <font color=red>";CurrentStory.StoryTitle;"</font></B><P>"
+            end if
+         else
+            print "<B>Creating New Story</B><P>"
+         end if
+         print ""
+         dim FirstEntry as boolean = not ShowLastLine(LastOffset)
+         print ""
+         print "<input type=hidden name=""PostStory"" value=""1"">"
+         print "<input type=hidden name=""PostOffset"" value=""";LastOffset;""">"
+         print "<TABLE BORDER=1 BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#CCCCCC"" BORDERCOLORLIGHT=""#CCCCCC""  CELLPADDING=2 CELLSPACING=0 width=95%>"
+         print "<TR>"
+         print "   <TD BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000""><FONT SIZE=1 FACE='HELV,ARIAL'>"
+         print "      Your Name&nbsp;&nbsp;&nbsp;&nbsp;"
+         print "   </TD>"
+         print "   <TD BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000""><FONT SIZE=1 FACE='HELV,ARIAL'>"
+         print "      <input name=""AuthorName"" size=50 maxlength=50>&nbsp;&nbsp;"
+         print "   </TD>"
+         print "</TR>"
+
+         print "<TR>"
+         print "   <TD BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000""><FONT SIZE=1 FACE='HELV,ARIAL'>"
+         print "      Your E-Mail&nbsp;&nbsp;&nbsp;&nbsp;"
+         print "   </TD>"
+         print "   <TD BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000""><FONT SIZE=1 FACE='HELV,ARIAL'>"
+         print "      <input name=""EMail"" size=50 maxlength=50>&nbsp;&nbsp;"
+         print "   </TD>"
+         print "</TR>"
+
+         if FirstEntry then
+            print "<TR>"
+            print "   <TD BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000""><FONT SIZE=1 FACE='HELV,ARIAL'>"
+            print "      Name Of Story&nbsp;&nbsp;&nbsp;&nbsp;"
+            print "   </TD>"
+            print "   <TD BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000""><FONT SIZE=1 FACE='HELV,ARIAL'>"
+            print "      <input name=""StoryName"" size=50 maxlength=30>&nbsp;&nbsp;"
+            print "   </TD>"
+            print "</TR>"
+         end if
+        
+         print "<TR>"
+         print "   <TD valign=top BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000""><FONT SIZE=1 FACE='HELV,ARIAL'>"
+         print "      Story Text&nbsp;&nbsp;&nbsp;&nbsp;"
+         print "   </TD>"
+         print "   <TD BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000""><FONT SIZE=1 FACE='HELV,ARIAL'>"
+         print "      <textarea NAME=""StoryText"" ROWS=7 COLS=40 WRAP=virtual></textarea>&nbsp;&nbsp;"
+         print "   </TD>"
+         print "</TR>"
+         print "</TABLE>"
+
+         print "<br><font SIZE=-2 FACE=""Arial, helvetica"">"
+         print "<input TYPE=""checkbox"" NAME=""HideEmail"">&nbsp;I do not wish to allow others to"
+         print "see my E-Mail address.</font><br>"
+         print "<input TYPE=""checkbox"" NAME=""EmailWhenDone"" checked>&nbsp;Please E-Mail me the entire story when it's done!<p></font><br>"
+         print "<div ALIGN=center>"
+         print "<font SIZE=-1 FACE=""Arial,Helvetica,geneva""><input TYPE=""submit"" VALUE=""Post Submission""></font>"
+         print "</div>"
+         print "</form>"
+
+         print ""
+         print "</BODY>"
+         print "</HTML>"
+      case "info"
+         GetCurrentStory(CurrentStory)
+         
+         print "<HTML>"
+         print "<HEAD><FONT SIZE=1 FACE=""Helv,ARIAL""></HEAD>"
+         print ""
+         print "<BODY BGCOLOR=""white"" TOPMARGIN=5 TEXT=""#000000"" LINK=""#000000"" VLINK=""#000000"" STYLE=""font-face: Helv,Arial; font-size:10pt;"">"
+         
+         if not CheckDBFiles then
+            print "<B>There are currently no stories in the database.</B><P>"
+         else
+            print "<B>Story Information</B><P>"
+            print ""
+            print "<TABLE BORDER=1 BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#CCCCCC"" BORDERCOLORLIGHT=""#CCCCCC""  CELLPADDING=2 CELLSPACING=0 width=95%>"
+            print "<TR>"
+            print "   <TD width=20% BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000""><FONT SIZE=1 FACE='HELV,ARIAL'>"
+            print "      Story Name&nbsp;&nbsp;&nbsp;&nbsp;"
+            print "   </TD>"
+            print "   <TD BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000""><FONT SIZE=1 FACE='HELV,ARIAL'>"
+            print "      ";CurrentStory.StoryTitle;"&nbsp;&nbsp;"
+            print "   </TD>"
+            print "</TR>"
+   
+            print "<TR>"
+            print "   <TD BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000""><FONT SIZE=1 FACE='HELV,ARIAL'>"
+            print "      Started&nbsp;&nbsp;&nbsp;&nbsp;"
+            print "   </TD>"
+            print "   <TD BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000""><FONT SIZE=1 FACE='HELV,ARIAL'>"
+            print "      ";DateString(CurrentStory.StartDate);"&nbsp;&nbsp;"
+            print "   </TD>"
+            print "</TR>"
+   
+            print "<TR>"
+            print "   <TD BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000""><FONT SIZE=1 FACE='HELV,ARIAL'>"
+            print "      Entries&nbsp;&nbsp;&nbsp;&nbsp;"
+            print "   </TD>"
+            print "   <TD BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000""><FONT SIZE=1 FACE='HELV,ARIAL'>"
+            print "      ";CurrentStory.Entries;"&nbsp;&nbsp;"
+            print "   </TD>"
+            print "</TR>"
+   
+            print "<TR>"
+            print "   <TD BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000""><FONT SIZE=1 FACE='HELV,ARIAL'>"
+            print "      Max. Entries&nbsp;&nbsp;&nbsp;&nbsp;"
+            print "   </TD>"
+            print "   <TD BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000""><FONT SIZE=1 FACE='HELV,ARIAL'>"
+            print "      ";cf.MaxEntries;"&nbsp;&nbsp;"
+            print "   </TD>"
+            print "</TR>"
+            print "</table>"
+            
+            if Regged then
+               print "<br><font size=1 face=arial color=1>This copy of PS-StoryTeller is registered to <b>";
+               print makewild.BBSName;"</b>."
+            else
+               print "<br><font size=1 face=arial color=1>This copy of PS-StoryTeller is <font color=red><b>Unregistered</b></font>!<b>";
+            end if
+         end if
+         print "</body>"
+         print "</html>"
+      case "list"
+         print "<HTML>"
+         print "<HEAD><FONT SIZE=1 FACE=""Helv,ARIAL""></HEAD>"
+         print ""
+         print "<BODY BGCOLOR=""#FFFFFF"" TOPMARGIN=5 TEXT=""#000000"" LINK=""#000000"" VLINK=""#000000"" STYLE=""font-face: Helv,Arial; font-size:10pt;"">"
+
+         if not CheckDBFiles then
+            print "<B>There are currently no stories in the database.</B><P>"
+         else
+            print "<B>Story Database</B><P>"
+            print ""
+            print "Please click on a story below to read it.  Note you can only read finished stories.<P>"
+            print ""
+            print "<TABLE BORDER = 1 BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#CCCCCC"" BORDERCOLORLIGHT=""#CCCCCC""  CELLPADDING = 2 CELLSPACING = 0>"
+            print "<TR>"
+            print "   <TD bgcolor=#d9d9d9 WIDTH = 250 BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000""><FONT SIZE=1 FACE='HELV,ARIAL'>"
+            print "      <font face=arial size=1 color=black><b>Story Name&nbsp;&nbsp;&nbsp;&nbsp;"
+            print "   </TD>"
+            print "   <TD bgcolor=#d9d9d9 WIDTH = 50 BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000""><FONT SIZE=1 FACE='HELV,ARIAL'>"
+            print "      <font face=arial size=1 color=black><b>Entries&nbsp;&nbsp;"
+            print "   </TD>"
+            print "   <TD bgcolor=#d9d9d9 WIDTH = 100 BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000"" ><FONT SIZE=1 FACE='HELV,ARIAL'>"
+            print "      <font face=arial size=1 color=black><b>Date Started&nbsp;&nbsp;";
+            print "   </TD>"
+            print "   <TD bgcolor=#d9d9d9 WIDTH = 100 BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000"" ><FONT SIZE=1 FACE='HELV,ARIAL'>"
+            print "      <font face=arial size=1 color=black><b>Date Finished&nbsp;&nbsp;";
+            print "   </TD>"
+            print "</TR>"
+            
+            ListStories
+   
+            print "</TABLE>"
+         end if
+         print ""
+         print "</BODY>"
+         print "</HTML>"
+      case "about"
+         HTTPRedirect("html-PSStoryTeller?Frame=mainscreen")
+         end
+      case "authors"
+         print "<HTML>"
+         print "<HEAD><FONT SIZE=1 FACE=""Helv,ARIAL""></HEAD>"
+         print ""
+         print "<BODY BGCOLOR=""#FFFFFF"" TOPMARGIN=5 TEXT=""#000000"" LINK=""#000000"" VLINK=""#000000"" STYLE=""font-face: Helv,Arial; font-size:10pt;"">"
+
+         if not CheckDBFiles then
+            print "<B>There are currently no stories in the database.</B><P>"
+         else
+            print "<B>Registry Of Authors</B><P>"
+            print ""
+            print "Below is a list of everyone that has contributed to a story on this site.<P>"
+            print ""
+            ShowAuthors
+         end if
+         
+         print ""
+         print "</BODY>"
+         print "</HTML>"
+      case "sysop"
+   end select
+   end
+end if
+
+if GetParamInt(URL, "PostStory") = 1 then
+   if GetParamInt(URL, "PostOffset") <> GetStoryOffset then
+      print "<HTML>"
+      print "<HEAD><FONT SIZE=1 FACE=""Helv,ARIAL""></HEAD>"
+      print ""
+      print "<BODY BGCOLOR=""#FFFFFF"" TOPMARGIN=5 TEXT=""#000000"" LINK=""#000000"" VLINK=""#000000"" STYLE=""font-face: Helv,Arial; font-size:10pt;"">"
+      print "<FONT SIZE=1 FACE=""Helv,ARIAL""><B>Sorry!</B><P>"
+      print "While you were typing your piece of the story, <i>another</i> Web Surfer submitted"
+      print "an addition first!  Since this program works on a first come first serve basis, your"
+      print "entry cannot be used.  However, below we will repost your entry so you can copy it"
+      print "to the clipboard, then modify it slightly and try to post again!  Thank you for"
+      print "understanding."
+      print "<br><p><hr height=1 color=black>"
+      print GetParamStr(URL, "StoryText")
+      print "<br><hr height=1 color=#919191>"
+      print "</body></html>"
+   else
+      if len(trim(GetParamStr(URL, "StoryText"))) <= 10 then
+         print "<HTML>"
+         print "<HEAD><FONT SIZE=1 FACE=""Helv,ARIAL""></HEAD>"
+         print ""
+         print "<BODY BGCOLOR=""#FFFFFF"" TOPMARGIN=5 TEXT=""#000000"" LINK=""#000000"" VLINK=""#000000"" STYLE=""font-face: Helv,Arial; font-size:10pt;"">"
+         print "<FONT SIZE=1 FACE=""Helv,ARIAL""><B>Error!</B><P>"
+         print "You must post at least 10 characters for your entry to be added.  Please try again!"
+         print "</body></html>"
+      else
+         if WriteStoryToDB then
+            if not DisplayFile("wc:\data\PSStoryPosted.htm") then
+               print "<HTML>"
+               print "<HEAD><FONT SIZE=1 FACE=""Helv,ARIAL""></HEAD>"
+               print ""
+               print "<BODY BGCOLOR=""#FFFFFF"" TOPMARGIN=5 TEXT=""#000000"" LINK=""#000000"" VLINK=""#000000"" STYLE=""font-face: Helv,Arial; font-size:10pt;"">"
+               print "<FONT SIZE=1 FACE=""Helv,ARIAL""><B>Thank You!</B><P>"
+               print "Your entry has been added to the story.  Thanks again for your participation!"
+               print "<br><br><center>Go Back To <a href=""/"" target=""_top""><b>Home Page</b></a>.</center>"
+               print "</body></html>"
+            end if
+         else
+            print "<HTML>"
+            print "<HEAD><FONT SIZE=1 FACE=""Helv,ARIAL""></HEAD>"
+            print ""
+            print "<BODY BGCOLOR=""#FFFFFF"" TOPMARGIN=5 TEXT=""#000000"" LINK=""#000000"" VLINK=""#000000"" STYLE=""font-face: Helv,Arial; font-size:10pt;"">"
+            print "<FONT SIZE=1 FACE=""Helv,ARIAL""><B>Error!</B><P>"
+            print "For whatever reason, your entry was not saved.  This could be because the server"
+            print "is not properly configured or out of hard disk space.  Please try it again or"
+            print "email the <a href=""mailto:webmaster@piscessoft.com"">Webmaster</a>.  Thanks!"
+            print "</body></html>"
+         end if
+      end if
+   end if
+end if
+
+if GetParamInt(URL, "ReadStory") > 0 then
+   print "<HTML>"
+   print "<HEAD><FONT SIZE=1 FACE=""Helv,ARIAL""></HEAD>"
+   print ""
+   print "<BODY BGCOLOR=""#FFFFFF"" TOPMARGIN=5 TEXT=""#000000"" LINK=""#000000"" VLINK=""#000000"" STYLE=""font-face: Helv,Arial; font-size:10pt;"">"
+   print "<B>Read A Story</B><P>"
+   print ""
+   
+   print "<TABLE BORDER = 1 BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#CCCCCC"" BORDERCOLORLIGHT=""#CCCCCC""  CELLPADDING = 2 CELLSPACING = 0>"
+   print "<TR>"
+   print "   <TD bgcolor=#d9d9d9 WIDTH = 250 BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000""><FONT SIZE=1 FACE='HELV,ARIAL'>"
+   print "      <font face=arial size=1 color=black><b>Story Name&nbsp;&nbsp;&nbsp;&nbsp;"
+   print "   </TD>"
+   print "   <TD bgcolor=#d9d9d9 WIDTH = 50 BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000""><FONT SIZE=1 FACE='HELV,ARIAL'>"
+   print "      <font face=arial size=1 color=black><b>Entries&nbsp;&nbsp;"
+   print "   </TD>"
+   print "   <TD bgcolor=#d9d9d9 WIDTH = 100 BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000"" ><FONT SIZE=1 FACE='HELV,ARIAL'>"
+   print "      <font face=arial size=1 color=black><b>Date Started&nbsp;&nbsp;";
+   print "   </TD>"
+   print "   <TD bgcolor=#d9d9d9 WIDTH = 100 BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000"" ><FONT SIZE=1 FACE='HELV,ARIAL'>"
+   print "      <font face=arial size=1 color=black><b>Date Finished&nbsp;&nbsp;";
+   print "   </TD>"
+   print "</TR>"
+   
+   dim j as integer = open "wc:\data\StoryDatabase.dat" for random len=len(TStory)
+   dim GetRecord as TStory
+   get #j, GetParamInt(URL, "ReadStory"), GetRecord
+   close #j
+   
+   if GetRecord.Finished then
+      print "<TR>"
+      print "   <TD WIDTH = 250 BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000""><FONT SIZE=1 FACE='HELV,ARIAL'>"
+      print "      <font color=red>";GetRecord.StoryTitle;"&nbsp;&nbsp;&nbsp;&nbsp;"
+      print "   </TD>"
+      print "   <TD WIDTH = 50 BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000""><FONT SIZE=1 FACE='HELV,ARIAL'>"
+      print "      <font color=red>";GetRecord.Entries;"&nbsp;&nbsp;"
+      print "   </TD>"
+      print "   <TD WIDTH = 100 BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000"" ><FONT SIZE=1 FACE='HELV,ARIAL'>"
+      print "      <font color=red>";DateString(GetRecord.StartDate);"&nbsp;&nbsp;";
+      print "   </TD>"
+      print "   <TD WIDTH = 100 BORDERCOLOR=""#CCCCCC"" BORDERCOLORDARK=""#FFFFFF"" BORDERCOLORLIGHT=""#000000"" ><FONT SIZE=1 FACE='HELV,ARIAL'>"
+      print "      <font color=red>";DateString(GetRecord.EndDate);"&nbsp;&nbsp;"
+      print "   </TD>"
+      print "</TR>"
+      print "<TR><td colspan=4><font face=arial size=2 color=black>"
+
+      open "wc:\data\Story." + trim(GetParamStr(URL, "ReadStory")) for binary as #i
+      
+      dim RecallLooper as integer
+      dim LetterPointer as byte
+
+      for RecallLooper = 1 to lof(i)
+         get #i, RecallLooper, LetterPointer
+         print chr(LetterPointer);
+      next
+      
+      print "</font></td></tr></table>"
+   else
+      print "<tr><td colspan=4><center><FONT SIZE=1 FACE='HELV,ARIAL'><b>Error: This story is not finished and cannot be read.</b></td></tr></table>"
+   end if
+end if

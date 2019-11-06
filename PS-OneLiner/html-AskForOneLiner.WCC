@@ -1,0 +1,9 @@
+print "<html>"
+print "<head><title>Add OneLiner</title></head>"
+print "<body>"
+Print "<BR>"
+Print "Please Enter Your OneLiner In The Space Given Below:<BR>";
+print "<form action=";CHR$(34);"/code/html-OneLinerAdd?OneLinerGot";CHR$(34);" method=";CHR$(34);"post";CHR$(34);">"
+Print "<input type=";CHR$(34);"text";CHR$(34);" name=";CHR$(34);"OneLinerGot";CHR$(34);" value=";CHR$(34);"";CHR$(34);" size=75><BR>"
+Print "<input type=";CHR$(34);"submit";CHR$(34);" name=";CHR$(34);"S";CHR$(34);" value=";CHR$(34);"Submit";CHR$(34);">"
+Print "</form>"
